@@ -1,0 +1,117 @@
+# ─── IPCMO .gitignore ─────────────────────────────────────────────────────────
+# Files and folders that should NEVER be uploaded to GitHub
+
+# ── Node.js ──────────────────────────────────────────────────────────────────
+# Auto-generated dependency folder (huge, can be regenerated with `npm install`)
+node_modules/
+npm-debug.log
+yarn-error.log
+.npm/
+.pnp.*
+
+# ── Database files (sensitive — contains real user data) ────────────────────
+data/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Backup files
+*.bak
+*.backup
+backups/
+ipcmo_*.db
+
+# ── Environment & secrets ───────────────────────────────────────────────────
+.env
+.env.local
+.env.production
+.env.*.local
+*.pem
+*.key
+secrets/
+config.local.js
+
+# ── Session / runtime files ─────────────────────────────────────────────────
+sessions/
+uploads/
+tmp/
+temp/
+
+# ── Logs ────────────────────────────────────────────────────────────────────
+logs/
+*.log
+combined.log
+error.log
+access.log
+
+# ── Operating System files ──────────────────────────────────────────────────
+# Windows
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+
+# Linux
+*~
+.directory
+.Trash-*
+
+# ── IDEs and editors ────────────────────────────────────────────────────────
+# VS Code
+.vscode/
+*.code-workspace
+
+# JetBrains (WebStorm, IntelliJ)
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# ── Build artefacts (none currently, but future-proof) ──────────────────────
+dist/
+build/
+out/
+*.exe
+*.zip
+release/
+
+# ── Test outputs ────────────────────────────────────────────────────────────
+coverage/
+.nyc_output/
+test-results/
+
+# ── Personal notes / drafts ─────────────────────────────────────────────────
+notes.txt
+todo.txt
+draft/
+private/
+scratch/
+
+# ── Anything starting with _local or _draft ─────────────────────────────────
+_local/
+_draft/
+*_local.*
+*_draft.*
