@@ -1,0 +1,77 @@
+═══════════════════════════════════════════════════════════
+   IPCMO v1.0 — WINDOWS INSTALLATION GUIDE (FINAL)
+   Uses Node.js built-in SQLite — zero compilation needed
+═══════════════════════════════════════════════════════════
+
+WHY THIS VERSION WORKS:
+────────────────────────
+  Node.js v22.5+ and v24+ include SQLite built-in (node:sqlite).
+  You already have Node.js v24.15.0 — so no SQLite package,
+  no Python, no Visual Studio, no build tools needed at all.
+
+STEP 1: Delete old node_modules
+─────────────────────────────────
+  In Command Prompt:
+      rd /s /q C:\Projects\ipcmo\node_modules
+
+  Or in Explorer: delete the node_modules folder manually.
+
+STEP 2: Delete old database (if any failed attempts)
+──────────────────────────────────────────────────────
+  Delete: C:\Projects\ipcmo\data\ipcmo.db  (if it exists)
+
+STEP 3: Extract new zip files
+───────────────────────────────
+  Extract all files from ipcmo-v1.0.zip to C:\Projects\ipcmo
+  (overwrite all existing files)
+
+STEP 4: Install and start
+───────────────────────────
+  Open Command Prompt, then:
+
+      cd C:\Projects\ipcmo
+      npm install
+      npm run setup-db
+      npm start
+
+  OR simply double-click: START_SERVER.bat
+
+EXPECTED OUTPUT from setup-db:
+────────────────────────────────
+  Setting up database...
+  ✓ All tables ready
+  ✓ Admin created  →  admin / Admin@1234
+  ✓ Cutting allowance chart seeded
+  ✓ Default project created
+  ✓ Database ready: C:\Projects\ipcmo\data\ipcmo.db
+
+EXPECTED OUTPUT from npm start:
+────────────────────────────────
+  ╔══════════════════════════════════════════════════════════╗
+  ║  INTEGRATED PIPE CUTTING MANAGEMENT & OPTIMIZER (IPCMO) ║
+  ╠══════════════════════════════════════════════════════════╣
+  ║  Local:   http://localhost:3000                          ║
+  ║  Network: http://192.168.x.x:3000                       ║
+  ╚══════════════════════════════════════════════════════════╝
+
+Open http://localhost:3000 in browser → login: admin / Admin@1234
+
+SHARING WITH TEAM:
+───────────────────
+  Share the Network URL shown in the terminal.
+  Team members open it in any browser. No install needed.
+
+TROUBLESHOOTING:
+─────────────────
+  "ExperimentalWarning: SQLite is an experimental feature"
+      → This is just a warning, not an error. Ignore it.
+         The app works perfectly fine.
+
+  "Port 3000 already in use":
+      set PORT=4000 && npm start
+      Then open: http://localhost:4000
+
+  npm install fails with EPERM:
+      Right-click Command Prompt → Run as Administrator
+      Then run: npm install
+═══════════════════════════════════════════════════════════
