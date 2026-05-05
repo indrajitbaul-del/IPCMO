@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>IPCMO — Sign In</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --ink:#0d1117;--surface:#161c28;--surface2:#1e2736;
+  --blue:#4a90d9;--blue2:#2e6cb8;--green:#2ec87a;--amber:#e07b3a;
+  --muted:#4a5870;--muted2:#6b7a8d;
+  --border:rgba(255,255,255,.07);--border2:rgba(255,255,255,.12);
+  --text:#e8edf8;--text2:#9daabf;
+  --mono:'DM Mono',monospace;--head:'Syne',sans-serif;--body:'DM Sans',sans-serif;
+}
+html,body{height:100%;font-family:var(--body);background:var(--ink);overflow:hidden;}
+
+/* ── BACKGROUND ── */
+.bg{position:fixed;inset:0;overflow:hidden;pointer-events:none;}
+.bg-grid{position:absolute;inset:0;background-image:repeating-linear-gradient(0deg,transparent,transparent 59px,rgba(255,255,255,.025) 60px),repeating-linear-gradient(90deg,transparent,transparent 59px,rgba(255,255,255,.025) 60px);}
+.pipe{position:absolute;border-radius:999px;opacity:0;animation:pipePulse var(--dur,8s) var(--delay,0s) infinite ease-in-out;}
+.pipe-h{height:2px;background:linear-gradient(90deg,transparent,var(--pc,rgba(74,144,217,.25)),transparent);}
+.pipe-v{width:2px;background:linear-gradient(180deg,transparent,var(--pc,rgba(74,144,217,.25)),transparent);}
+@keyframes pipePulse{0%,100%{opacity:0;transform:scaleX(.3);}40%,60%{opacity:1;transform:scaleX(1);}}
+@keyframes pipePulseV{0%,100%{opacity:0;transform:scaleY(.3);}40%,60%{opacity:1;transform:scaleY(1);}}
+.pipe-v{animation-name:pipePulseV;}
+.node{position:absolute;width:6px;height:6px;border-radius:50%;background:var(--nc,rgba(74,144,217,.5));box-shadow:0 0 12px var(--nc,rgba(74,144,217,.3));transform:translate(-50%,-50%);opacity:0;animation:nodePulse var(--dur,6s) var(--delay,0s) infinite ease-in-out;}
+@keyframes nodePulse{0%,100%{opacity:0;transform:translate(-50%,-50%) scale(.5);}50%{opacity:1;transform:translate(-50%,-50%) scale(1);}}
+.bg-wash{position:absolute;inset:0;background:radial-gradient(ellipse 60% 50% at 15% 50%,rgba(74,144,217,.06) 0%,transparent 70%),radial-gradient(ellipse 40% 60% at 85% 30%,rgba(46,200,122,.05) 0%,transparent 70%),radial-gradient(ellipse 50% 40% at 50% 90%,rgba(224,123,58,.04) 0%,transparent 70%);}
+
+/* ── LAYOUT ── */
+.shell{position:relative;z-index:1;min-height:100vh;display:grid;grid-template-columns:1fr 480px;}
+
+/* ── LEFT PANEL ── */
+.left{display:flex;flex-direction:column;justify-content:space-between;padding:60px 64px;position:relative;}
+.left-logo{display:flex;align-items:center;gap:14px;animation:fadeUp .6s .1s both ease-out;}
+.left-logo-mark svg{width:48px;height:48px;}
+.left-logo-text .name{font-family:var(--head);font-size:22px;font-weight:800;color:var(--text);letter-spacing:-.02em;line-height:1;}
+.left-logo-text .tagline{font-family:var(--mono);font-size:9px;color:var(--muted2);letter-spacing:.1em;text-transform:uppercase;margin-top:4px;}
+.left-hero{animation:fadeUp .6s .25s both ease-out;}
+.left-hero-label{font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.18em;text-transform:uppercase;color:var(--blue);margin-bottom:20px;display:flex;align-items:center;gap:10px;}
+.left-hero-label::before{content:'';width:24px;height:1px;background:var(--blue);}
+.left-hero h1{font-family:var(--head);font-size:clamp(36px,4vw,52px);font-weight:800;color:var(--text);line-height:1.08;letter-spacing:-.03em;margin-bottom:20px;}
+.left-hero h1 em{font-style:normal;background:linear-gradient(135deg,var(--blue),var(--green));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.left-hero p{font-size:15px;color:var(--text2);line-height:1.65;max-width:360px;font-weight:300;}
+.left-stats{display:flex;gap:32px;animation:fadeUp .6s .4s both ease-out;}
+.stat-item{border-left:2px solid var(--border2);padding-left:16px;}
+.stat-value{font-family:var(--head);font-size:28px;font-weight:800;color:var(--text);line-height:1;letter-spacing:-.02em;}
+.stat-value span{font-size:14px;font-weight:400;color:var(--muted2);}
+.stat-label{font-family:var(--mono);font-size:9px;color:var(--muted2);letter-spacing:.1em;text-transform:uppercase;margin-top:5px;}
+
+/* ── RIGHT PANEL ── */
+.right{display:flex;flex-direction:column;justify-content:center;padding:60px 56px;background:rgba(22,28,40,.85);backdrop-filter:blur(24px);border-left:1px solid var(--border);animation:slideIn .5s .15s both ease-out;}
+@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:none}}
+@keyframes slideIn{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:none}}
+
+.form-logo{display:flex;align-items:center;gap:11px;margin-bottom:40px;}
+.form-logo-mark svg{width:34px;height:34px;}
+.form-logo-text .n{font-family:var(--head);font-size:16px;font-weight:800;color:var(--text);letter-spacing:-.01em;line-height:1;}
+.form-logo-text .v{font-family:var(--mono);font-size:8px;color:var(--muted2);letter-spacing:.1em;text-transform:uppercase;margin-top:3px;}
+.form-heading{font-family:var(--head);font-size:28px;font-weight:800;color:var(--text);letter-spacing:-.02em;margin-bottom:6px;}
+.form-sub{font-size:13px;color:var(--text2);margin-bottom:36px;line-height:1.5;}
+
+/* Fields */
+.field{margin-bottom:20px;}
+.field label{display:block;font-family:var(--mono);font-size:9px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--muted2);margin-bottom:8px;}
+.input-wrap{position:relative;}
+.input-wrap svg.input-icon{position:absolute;left:14px;top:50%;transform:translateY(-50%);width:15px;height:15px;color:var(--muted);pointer-events:none;}
+.field input{width:100%;background:rgba(255,255,255,.04);border:1.5px solid var(--border2);border-radius:9px;padding:13px 14px 13px 42px;font-size:14px;color:var(--text);font-family:var(--body);outline:none;transition:border-color .15s,background .15s,box-shadow .15s;}
+.field input::placeholder{color:rgba(255,255,255,.18);}
+.field input:focus{border-color:var(--blue);background:rgba(74,144,217,.06);box-shadow:0 0 0 3px rgba(74,144,217,.12);}
+.field input.has-error{border-color:var(--amber);background:rgba(224,123,58,.06);}
+.pwd-toggle{position:absolute;right:14px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--muted);padding:2px;display:flex;align-items:center;transition:color .15s;}
+.pwd-toggle:hover{color:var(--text2);}
+.pwd-toggle svg{width:15px;height:15px;}
+
+/* Error */
+.err-box{background:rgba(224,123,58,.1);border:1px solid rgba(224,123,58,.25);border-radius:8px;padding:11px 14px;font-family:var(--mono);font-size:11px;color:#f0a060;margin-bottom:20px;display:none;align-items:center;gap:9px;animation:shake .3s ease;}
+.err-box.show{display:flex;}
+@keyframes shake{0%,100%{transform:translateX(0);}20%,60%{transform:translateX(-6px);}40%,80%{transform:translateX(6px);}}
+.err-box svg{width:14px;height:14px;flex-shrink:0;}
+
+/* Button */
+.btn-login{width:100%;background:var(--blue);border:none;border-radius:9px;padding:14px;font-family:var(--head);font-size:14px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#fff;cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:10px;margin-top:4px;position:relative;overflow:hidden;}
+.btn-login::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,transparent 40%,rgba(255,255,255,.08));}
+.btn-login:hover{background:var(--blue2);transform:translateY(-1px);box-shadow:0 8px 24px rgba(74,144,217,.35);}
+.btn-login:active{transform:translateY(0);box-shadow:none;}
+.btn-login.loading{pointer-events:none;opacity:.75;}
+.btn-login svg{width:16px;height:16px;}
+.spinner{width:16px;height:16px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite;display:none;}
+.btn-login.loading .spinner{display:block;}
+.btn-login.loading .btn-text{display:none;}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Divider */
+.divider{display:flex;align-items:center;gap:12px;margin:28px 0 0;}
+.divider-line{flex:1;height:1px;background:var(--border);}
+.divider-text{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.1em;white-space:nowrap;}
+
+/* Version strip */
+.version-strip{margin-top:16px;padding:14px 16px;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:9px;display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.version-item{display:flex;flex-direction:column;gap:3px;}
+.version-item .vk{font-family:var(--mono);font-size:8px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);}
+.version-item .vv{font-family:var(--mono);font-size:11px;color:var(--text2);}
+.version-item .vv.highlight{color:var(--green);}
+
+/* Feature badges */
+.feature-badges{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px;}
+.fbadge{font-family:var(--mono);font-size:8px;letter-spacing:.06em;padding:3px 8px;border-radius:4px;background:rgba(255,255,255,.04);border:1px solid var(--border);color:var(--muted2);}
+.fbadge.new{background:rgba(46,200,122,.1);border-color:rgba(46,200,122,.2);color:#2ec87a;}
+
+.form-footer{margin-top:20px;text-align:center;font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.04em;}
+
+/* Responsive */
+@media(max-width:860px){
+  .shell{grid-template-columns:1fr;}
+  .left{display:none;}
+  .right{min-height:100vh;border-left:none;padding:40px 32px;background:rgba(22,28,40,.96);justify-content:center;}
+}
+@media(max-width:400px){.right{padding:32px 20px;}.form-heading{font-size:22px;}}
+</style>
+</head>
+<body>
+
+<div class="bg">
+  <div class="bg-grid"></div>
+  <div class="bg-wash"></div>
+  <div class="pipe pipe-h" style="top:18%;left:0;right:0;--dur:9s;--delay:0s;--pc:rgba(74,144,217,.2);"></div>
+  <div class="pipe pipe-h" style="top:35%;left:0;right:0;--dur:11s;--delay:2s;--pc:rgba(46,200,122,.15);"></div>
+  <div class="pipe pipe-h" style="top:55%;left:0;right:0;--dur:8s;--delay:4.5s;--pc:rgba(74,144,217,.18);"></div>
+  <div class="pipe pipe-h" style="top:72%;left:0;right:0;--dur:13s;--delay:1s;--pc:rgba(224,123,58,.12);"></div>
+  <div class="pipe pipe-h" style="top:88%;left:0;right:0;--dur:10s;--delay:6s;--pc:rgba(46,200,122,.12);"></div>
+  <div class="pipe pipe-v" style="left:20%;top:0;bottom:0;height:100%;--dur:12s;--delay:1s;--pc:rgba(74,144,217,.15);"></div>
+  <div class="pipe pipe-v" style="left:45%;top:0;bottom:0;height:100%;--dur:9s;--delay:3s;--pc:rgba(46,200,122,.12);"></div>
+  <div class="pipe pipe-v" style="left:68%;top:0;bottom:0;height:100%;--dur:14s;--delay:0.5s;--pc:rgba(74,144,217,.1);"></div>
+  <div class="node" style="top:18%;left:20%;--dur:8s;--delay:0.5s;--nc:rgba(74,144,217,.6);"></div>
+  <div class="node" style="top:18%;left:45%;--dur:11s;--delay:2.5s;--nc:rgba(46,200,122,.5);"></div>
+  <div class="node" style="top:35%;left:20%;--dur:9s;--delay:1.5s;--nc:rgba(46,200,122,.5);"></div>
+  <div class="node" style="top:35%;left:68%;--dur:12s;--delay:3.5s;--nc:rgba(74,144,217,.5);"></div>
+  <div class="node" style="top:55%;left:45%;--dur:10s;--delay:0s;--nc:rgba(224,123,58,.6);"></div>
+  <div class="node" style="top:55%;left:68%;--dur:8s;--delay:5s;--nc:rgba(74,144,217,.5);"></div>
+  <div class="node" style="top:72%;left:20%;--dur:13s;--delay:2s;--nc:rgba(74,144,217,.4);"></div>
+  <div class="node" style="top:88%;left:45%;--dur:7s;--delay:4s;--nc:rgba(46,200,122,.5);"></div>
+</div>
+
+<div class="shell">
+
+  <!-- LEFT: Brand panel -->
+  <div class="left">
+    <div class="left-logo">
+      <div class="left-logo-mark">
+        <svg viewBox="0 0 48 48" fill="none">
+          <rect width="48" height="48" rx="12" fill="#111827"/>
+          <rect x="5" y="20" width="38" height="8" rx="4" fill="#1e3a5f"/>
+          <rect x="5" y="20" width="38" height="8" rx="4" stroke="#4a90d9" stroke-width="1"/>
+          <rect x="8" y="23" width="32" height="2" rx="1" fill="#0d1117"/>
+          <path d="M18 12 L30 12 L34 24 L30 36 L18 36 L14 24 Z" fill="rgba(46,200,122,.08)" stroke="#2ec87a" stroke-width="1.4"/>
+          <line x1="24" y1="8" x2="24" y2="40" stroke="rgba(74,144,217,.3)" stroke-width="1" stroke-dasharray="3 3"/>
+          <circle cx="24" cy="24" r="4" fill="#1a2a40" stroke="#4a90d9" stroke-width="1.2"/>
+          <circle cx="24" cy="24" r="2" fill="#2ec87a"/>
+        </svg>
+      </div>
+      <div class="left-logo-text">
+        <div class="name">IPCMO</div>
+        <div class="tagline">Pipe Cutting & Optimisation · v2.4</div>
+      </div>
+    </div>
+
+    <div class="left-hero">
+      <div class="left-hero-label">Industrial Intelligence</div>
+      <h1>Precision cutting.<br><em>Zero waste.</em><br>Full control.</h1>
+      <p>Manage every metre of pipe across every material, project, and spool. From stock receipt to cutting plan to remnant — all in one place.</p>
+    </div>
+
+    <div class="left-stats">
+      <div class="stat-item">
+        <div class="stat-value">100<span>%</span></div>
+        <div class="stat-label">Web-based · No install</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-value">v2.4</div>
+        <div class="stat-label">Latest release</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-value">453<span>+</span></div>
+        <div class="stat-label">Material formats parsed</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Login -->
+  <div class="right">
+    <div class="form-logo">
+      <div class="form-logo-mark">
+        <svg viewBox="0 0 34 34" fill="none">
+          <rect width="34" height="34" rx="8" fill="#111827"/>
+          <rect x="3" y="14" width="28" height="6" rx="3" fill="#1e3a5f" stroke="#4a90d9" stroke-width=".8"/>
+          <rect x="5" y="16" width="24" height="2" rx="1" fill="#0d1117"/>
+          <path d="M13 9 L21 9 L24 17 L21 25 L13 25 L10 17 Z" fill="none" stroke="#2ec87a" stroke-width="1.1"/>
+          <circle cx="17" cy="17" r="2.5" fill="#1a2a40" stroke="#4a90d9" stroke-width="1"/>
+          <circle cx="17" cy="17" r="1" fill="#2ec87a"/>
+        </svg>
+      </div>
+      <div class="form-logo-text">
+        <div class="n">IPCMO</div>
+        <div class="v">v2.4 · Pipe Cutting & Optimisation</div>
+      </div>
+    </div>
+
+    <div class="form-heading">Welcome back</div>
+    <div class="form-sub">Sign in to access your project workspace and cutting plans.</div>
+
+    <div class="err-box" id="err">
+      <svg fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+      <span id="err-msg">Invalid username or password.</span>
+    </div>
+
+    <div class="field">
+      <label>Username</label>
+      <div class="input-wrap">
+        <svg class="input-icon" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/></svg>
+        <input type="text" id="u" placeholder="Enter your username" autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('p').focus()">
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Password</label>
+      <div class="input-wrap">
+        <svg class="input-icon" fill="currentColor" viewBox="0 0 24 24"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>
+        <input type="password" id="p" placeholder="Enter your password" autocomplete="current-password" onkeydown="if(event.key==='Enter')login()">
+        <button class="pwd-toggle" onclick="togglePwd()" type="button" tabindex="-1">
+          <svg id="eye-icon" fill="currentColor" viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <button class="btn-login" id="btn" onclick="login()">
+      <span class="btn-text" style="display:flex;align-items:center;gap:8px;">
+        <svg fill="currentColor" viewBox="0 0 24 24" style="width:15px;height:15px;"><path d="M11 7L9.6 8.4l2.6 2.6H2v2h10.2l-2.6 2.6L11 17l5-5-5-5zm9 12h-8v2h8c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2h-8v2h8v14z"/></svg>
+        Sign in to IPCMO
+      </span>
+      <div class="spinner"></div>
+    </button>
+
+    <div class="divider">
+      <div class="divider-line"></div>
+      <div class="divider-text">System information</div>
+      <div class="divider-line"></div>
+    </div>
+
+    <div class="version-strip">
+      <div class="version-item">
+        <div class="vk">Version</div>
+        <div class="vv highlight">IPCMO v2.4</div>
+      </div>
+      <div class="version-item">
+        <div class="vk">Platform</div>
+        <div class="vv">Node.js · SQLite · Express</div>
+      </div>
+      <div class="version-item">
+        <div class="vk">Build</div>
+        <div class="vv">May 2026</div>
+      </div>
+      <div class="version-item">
+        <div class="vk">Edition</div>
+        <div class="vv">Multi-user · Role-based</div>
+      </div>
+    </div>
+
+    <div class="feature-badges">
+      <span class="fbadge new">New Logo</span>
+      <span class="fbadge new">Material Colours</span>
+      <span class="fbadge new">⌘K Quick Search</span>
+      <span class="fbadge new">Mobile Nav</span>
+      <span class="fbadge new">Pipe Visualiser</span>
+      <span class="fbadge new">Low Stock Alerts</span>
+      <span class="fbadge">Bulk Upload</span>
+      <span class="fbadge">Cutting Plans</span>
+      <span class="fbadge">Remnant Register</span>
+      <span class="fbadge">PDF &amp; Excel Export</span>
+    </div>
+
+    <div class="form-footer">© 2026 IPCMO · All rights reserved · Secure multi-user access</div>
+  </div>
+</div>
+
+<script>
+function togglePwd() {
+  const inp = document.getElementById('p');
+  const icon = document.getElementById('eye-icon');
+  if (inp.type === 'password') {
+    inp.type = 'text';
+    icon.innerHTML = '<path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/>';
+  } else {
+    inp.type = 'password';
+    icon.innerHTML = '<path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>';
+  }
+}
+
+async function login() {
+  const u = document.getElementById('u').value.trim();
+  const p = document.getElementById('p').value;
+  const err = document.getElementById('err');
+  const msg = document.getElementById('err-msg');
+  const btn = document.getElementById('btn');
+
+  err.classList.remove('show');
+  document.getElementById('u').classList.remove('has-error');
+  document.getElementById('p').classList.remove('has-error');
+
+  if (!u || !p) {
+    msg.textContent = 'Please enter both username and password.';
+    err.classList.add('show');
+    if (!u) document.getElementById('u').classList.add('has-error');
+    if (!p) document.getElementById('p').classList.add('has-error');
+    return;
+  }
+
+  btn.classList.add('loading');
+  try {
+    const r = await fetch('/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: u, password: p })
+    });
+    const d = await r.json();
+    if (r.ok) {
+      window.location = '/';
+    } else {
+      msg.textContent = d.error || 'Invalid username or password.';
+      err.classList.add('show');
+      document.getElementById('p').classList.add('has-error');
+      document.getElementById('p').value = '';
+      document.getElementById('p').focus();
+    }
+  } catch(e) {
+    msg.textContent = 'Cannot connect to server. Please try again.';
+    err.classList.add('show');
+  }
+  btn.classList.remove('loading');
+}
+</script>
+</body>
+</html>

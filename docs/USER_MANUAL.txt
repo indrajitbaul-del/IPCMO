@@ -1,0 +1,754 @@
+═══════════════════════════════════════════════════════════════════════════════
+     INTEGRATED PIPE CUTTING MANAGEMENT & OPTIMIZER (IPCMO) v1.0
+                         USER MANUAL & SETUP GUIDE
+═══════════════════════════════════════════════════════════════════════════════
+
+TABLE OF CONTENTS
+─────────────────
+ 1. What is IPCMO?
+ 2. System Requirements
+ 3. First-Time Installation (Step-by-Step)
+ 4. Starting & Stopping the Server
+ 5. Accessing from Other Devices / Locations / Companies
+ 6. Default Login & First-Time Setup
+ 7. Module Guide — How to Use Each Feature
+     7.1  Dashboard
+     7.2  Pipe Master
+     7.3  Pipe Stock
+     7.4  Spool Input
+     7.5  Run Simulation
+     7.6  Cutting Plans Register
+     7.7  Remnant Register
+     7.8  Site Update (Offline XLS Workflow)
+     7.9  Master Stock Register
+     7.10 Master Remnant Log
+     7.11 Cutting Allowance Chart
+     7.12 User Management
+ 8. Bulk Upload Formats (Column Reference)
+ 9. Cutting Allowance — How It Is Calculated
+10. Role & Permission Reference
+11. Database Backup & Recovery
+12. Deploying to Cloud (Different Location / Company)
+13. Troubleshooting
+14. Modification Prompt (AI Re-prompt Guide)
+
+═══════════════════════════════════════════════════════════════════════════════
+1. WHAT IS IPCMO?
+═══════════════════════════════════════════════════════════════════════════════
+
+IPCMO is a web-based, multi-user pipe cutting management system that runs on
+your own computer (or server) and is accessible to your entire team through
+a browser. It manages:
+
+  • Pipe material master (item codes, sizes, materials)
+  • Full-length pipe stock (received pipes, quantities, heat numbers)
+  • Isometric/spool input (which spools need which cuts)
+  • Automatic cutting plan simulation (allocates pipes to cuts optimally)
+  • Remnant register (leftover pieces tracked with unique IDs)
+  • Remnant priority re-use (remnants used FIRST before full pipes)
+  • Site offline update workflow (download XLS → update at site → upload)
+  • Full audit trail and history registers
+
+═══════════════════════════════════════════════════════════════════════════════
+2. SYSTEM REQUIREMENTS
+═══════════════════════════════════════════════════════════════════════════════
+
+  SERVER MACHINE (the PC that hosts the app):
+  ─────────────────────────────────────────────
+  • Windows 10/11, macOS 11+, or Ubuntu 20.04+
+  • Node.js version 18 or higher
+    → Download from: https://nodejs.org  (choose LTS version)
+  • 4 GB RAM minimum (8 GB recommended)
+  • 10 GB free disk space
+  • Connected to local network (WiFi or LAN) for team access
+
+  CLIENT MACHINES (team members who access the app):
+  ───────────────────────────────────────────────────
+  • Any device with a modern browser (Chrome, Firefox, Edge, Safari)
+  • Must be on the same WiFi/LAN as the server (for local network setup)
+  • No installation needed on client machines
+
+═══════════════════════════════════════════════════════════════════════════════
+3. FIRST-TIME INSTALLATION (STEP-BY-STEP)
+═══════════════════════════════════════════════════════════════════════════════
+
+STEP 1: Install Node.js
+  ─────────────────────
+  • Go to https://nodejs.org
+  • Download and install the LTS version
+  • After install, open Command Prompt (Windows) or Terminal (Mac/Linux)
+  • Type: node --version
+  • You should see: v18.x.x or higher
+
+STEP 2: Copy the project folder
+  ──────────────────────────────
+  • Copy the "ipcmo" folder to your preferred location
+    Example: C:\Projects\ipcmo   (Windows)
+             /home/user/ipcmo    (Linux/Mac)
+
+STEP 3: Install dependencies
+  ────────────────────────────
+  • Open Command Prompt / Terminal
+  • Navigate to the ipcmo folder:
+      Windows:  cd C:\Projects\ipcmo
+      Mac/Linux: cd /home/user/ipcmo
+  • Run: npm install
+  • Wait for it to finish (downloads required packages)
+
+STEP 4: Initialize the database
+  ─────────────────────────────
+  • Run: npm run setup-db
+  • This creates the "data/ipcmo.db" file with all tables
+  • You will see: "Default admin created: admin / Admin@1234"
+
+STEP 5: Start the server
+  ─────────────────────────
+  • Run: npm start
+  • You will see the startup banner with your network IP address
+  • Example output:
+      Local:   http://localhost:3000
+      Network: http://192.168.1.105:3000
+
+STEP 6: Open the application
+  ─────────────────────────────
+  • On the server PC: open browser → http://localhost:3000
+  • On other devices (same WiFi): http://192.168.1.105:3000
+    (use the IP shown in your terminal)
+
+═══════════════════════════════════════════════════════════════════════════════
+4. STARTING & STOPPING THE SERVER
+═══════════════════════════════════════════════════════════════════════════════
+
+  START:
+    cd C:\Projects\ipcmo
+    npm start
+
+  STOP:
+    Press Ctrl + C in the terminal window
+
+  AUTO-START ON WINDOWS (optional):
+    • Install PM2: npm install -g pm2
+    • Start with PM2: pm2 start src/server.js --name ipcmo
+    • Auto-start on boot: pm2 startup && pm2 save
+
+  AUTO-START ON LINUX (optional):
+    • Install PM2: sudo npm install -g pm2
+    • pm2 start src/server.js --name ipcmo
+    • pm2 startup && pm2 save
+
+═══════════════════════════════════════════════════════════════════════════════
+5. ACCESSING FROM OTHER DEVICES / LOCATIONS / COMPANIES
+═══════════════════════════════════════════════════════════════════════════════
+
+SCENARIO A: Same office / same WiFi network
+  ───────────────────────────────────────────
+  • Start the server on the host PC
+  • Find host PC IP: run "ipconfig" (Windows) or "ifconfig" (Linux/Mac)
+  • Team members open browser and go to: http://[HOST-IP]:3000
+  • Example: http://192.168.1.105:3000
+  • Everyone must be on the SAME WiFi or LAN
+
+SCENARIO B: Different location / remote access (VPN)
+  ──────────────────────────────────────────────────
+  Option 1 — Company VPN:
+    • Set up the server on office LAN
+    • Connect remote workers via company VPN
+    • Access via the server's internal IP over VPN
+
+  Option 2 — Port forwarding (simple remote access):
+    • On your router, forward port 3000 to the server PC
+    • Share your public IP or domain with users
+    ⚠ WARNING: Secure with HTTPS and firewall rules before exposing
+      publicly (see cloud deployment section below)
+
+SCENARIO C: Cloud server (accessible from anywhere, any company)
+  ──────────────────────────────────────────────────────────────
+  RECOMMENDED PROVIDERS:
+    • DigitalOcean Droplet — $6/month (simplest)
+    • AWS Lightsail — $3.50/month
+    • Azure VM — pay per use
+
+  STEP-BY-STEP CLOUD DEPLOYMENT:
+
+  1. Create a cloud server (Ubuntu 22.04, minimum 1GB RAM)
+
+  2. SSH into the server:
+       ssh root@[YOUR-SERVER-IP]
+
+  3. Install Node.js:
+       curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+       sudo apt-get install -y nodejs
+
+  4. Install git (if not present):
+       sudo apt-get install -y git
+
+  5. Upload your ipcmo folder (or use git):
+       # Using SCP from your local machine:
+       scp -r ./ipcmo root@[SERVER-IP]:/home/ipcmo
+
+  6. On the server, go to ipcmo folder:
+       cd /home/ipcmo
+       npm install
+       npm run setup-db
+
+  7. Install PM2 for auto-restart:
+       npm install -g pm2
+       pm2 start src/server.js --name ipcmo
+       pm2 startup
+       pm2 save
+
+  8. Setup Nginx as reverse proxy (for HTTPS + domain):
+       sudo apt-get install -y nginx
+       # Edit /etc/nginx/sites-available/ipcmo:
+       server {
+         listen 80;
+         server_name yourdomain.com;
+         location / {
+           proxy_pass http://localhost:3000;
+           proxy_http_version 1.1;
+           proxy_set_header Upgrade $http_upgrade;
+           proxy_set_header Connection 'upgrade';
+           proxy_set_header Host $host;
+         }
+       }
+       sudo ln -s /etc/nginx/sites-available/ipcmo /etc/nginx/sites-enabled/
+       sudo nginx -t && sudo systemctl restart nginx
+
+  9. Add HTTPS with Let's Encrypt (free SSL):
+       sudo apt-get install -y certbot python3-certbot-nginx
+       sudo certbot --nginx -d yourdomain.com
+
+  10. Users now access: https://yourdomain.com
+
+SCENARIO D: Different company — separate instance
+  ──────────────────────────────────────────────
+  • Each company should run their OWN instance of IPCMO
+  • Deploy a separate server for each company
+  • Each has its own database (data/ipcmo.db)
+  • Use Projects module to separate data within one company
+
+═══════════════════════════════════════════════════════════════════════════════
+6. DEFAULT LOGIN & FIRST-TIME SETUP
+═══════════════════════════════════════════════════════════════════════════════
+
+  Default credentials:
+    Username: admin
+    Password: Admin@1234
+
+  ⚠ CHANGE THE DEFAULT PASSWORD IMMEDIATELY AFTER FIRST LOGIN!
+
+  First-time setup order:
+  1. Login as admin
+  2. Go to User Management → create user accounts for your team
+  3. Go to Pipe Master → add your item codes (or bulk upload)
+  4. Go to Pipe Stock → add received pipes (or bulk upload)
+  5. Go to Spool Input → add isometric spools (or bulk upload)
+  6. Go to Run Simulation → select spools → click Run
+  7. View results → download cutting plan XLS/PDF
+  8. Go to Remnant Register → site team downloads template
+     → fills actual quantities at site → uploads at end of day
+
+═══════════════════════════════════════════════════════════════════════════════
+7. MODULE GUIDE
+═══════════════════════════════════════════════════════════════════════════════
+
+7.1 DASHBOARD
+─────────────
+  • Shows live counts: pipes in stock, remnants available,
+    cutting plans generated, spools loaded
+  • Recent cutting plans with quick view/download links
+  • Refresh automatically when you navigate to it
+
+7.2 PIPE MASTER
+───────────────
+  Purpose: Define all pipe item codes BEFORE adding stock.
+  An item code uniquely identifies a pipe by material + size + schedule.
+
+  Fields:
+    Item Code*       Unique identifier (e.g. CS-4IN-SCH40)
+    Description*     Human-readable name
+    Material*        Carbon Steel, Stainless Steel, HDPE, etc.
+    Nominal Size*    e.g. 4", 100NB
+    OD (mm)          Outside diameter in millimetres
+    Wall thick (mm)  Wall thickness in millimetres
+    Schedule         e.g. Sch 40, Sch 80, SDR17
+    Standard         e.g. ASME B36.10, ISO 4427
+    Cut allowance    Kerf + bevel loss in mm (default: 5mm)
+
+  Bulk Upload: Click "Bulk Upload" tab → download Excel template
+  → fill data → drop file to upload.
+
+7.3 PIPE STOCK
+──────────────
+  Purpose: Register physical full-length pipes received on site.
+  Each pipe gets a unique tag (e.g. P-CS-4IN-SCH40-0001).
+
+  Fields:
+    Item Code*       Must exist in Pipe Master
+    Full length (mm) Measured full pipe length
+    Quantity*        Number of pipes of this length
+    Tag prefix       Prefix for auto-generated pipe tags
+    Heat/Lot No.     Mill test certificate heat number
+    Location         Physical storage location (Yard B-2, Rack 3)
+    Received date    Date pipes arrived
+    Remarks          Any additional notes
+
+  Bulk Upload: Template columns:
+    item_code · pipe_length_mm · quantity · tag_prefix ·
+    heat_number · location · received_date
+
+7.4 SPOOL INPUT
+───────────────
+  Purpose: Load the fabrication requirements — which spool needs
+  which cut from which pipe type.
+
+  Spool fields:
+    Spool No.*       Unique spool number (e.g. SP-001, ISO-101-A)
+    ISO No.*         Isometric drawing number
+    Description      Spool description
+
+  Part rows (one per cut required):
+    Part No.*        Part identifier within the spool (P-1, P-2...)
+    Item Code*       Which pipe type to cut from (must be in master)
+    Required length* Net cut length needed in mm
+    Qty              How many of this cut are needed
+
+  AUTO-REMOVE: After simulation, click "Remove simulated" button
+  to clear all simulated spools from the list automatically.
+
+  Bulk Upload Template columns:
+    spool_no · iso_no · description · part_no ·
+    item_code · cut_length_mm · qty
+
+7.5 RUN SIMULATION
+──────────────────
+  Purpose: Automatically allocate pipe stock to spool cuts
+  and generate a cutting plan with unique remnant numbers.
+
+  HOW THE ENGINE WORKS:
+  1. Select one or more pending spools
+  2. Engine builds a pool per item code:
+       → Remnants (shortest sufficient first) — PRIORITY
+       → Full-length pipes (longest first)
+  3. For each cut required:
+       a. Find shortest remnant ≥ (required length + cutting allowance)
+       b. If no remnant fits, use next available full pipe
+       c. Deduct (required + allowance) from pipe length
+       d. Record cut against that pipe
+  4. After all cuts, any pipe with remaining length > 1mm
+     generates a REMNANT with unique number (REM-000001)
+  5. Results show:
+       • Pipe-by-pipe visual allocation bar
+       • Cut sequence per pipe
+       • Remnants generated
+       • Failed cuts (if stock insufficient)
+       • Balance pool (unused pipes + new remnants)
+
+  CUTTING ALLOWANCE:
+    Applied per item code as defined in Pipe Master.
+    Default = 5mm (industry standard for most sizes).
+    See Section 9 for detailed calculation method.
+
+  OUTPUTS:
+    • Download cutting plan as Excel (.xlsx)
+    • Download cutting plan as PDF
+    • View in browser with full visual breakdown
+
+7.6 CUTTING PLANS REGISTER
+──────────────────────────
+  • Complete history of all cutting plans generated
+  • Each plan has: Plan No, Project, Simulated by, Date,
+    number of cuts, number of remnants generated
+  • Click "View" to see full pipe-by-pipe breakdown in modal
+  • Download any plan as XLS or PDF at any time
+
+7.7 REMNANT REGISTER
+─────────────────────
+  Purpose: Track all remnant cut pieces with physical quantities
+  verified at site.
+
+  Columns:
+    Remnant No     Unique system-generated ID (REM-000001)
+    Item Code      Pipe type of this remnant
+    Description    From pipe master
+    Size           Nominal size
+    Heat No        Heat/mill cert number
+    Source Pipe    Original pipe tag this remnant came from
+    Source Plan    Cutting plan that generated this remnant
+    Theo L (mm)    Theoretical/calculated remaining length
+    Actual L (mm)  Physically measured length (updated by site)
+    Theo Qty       Theoretical quantity
+    Actual Qty     Physical count verified at site
+    Status         available / partially_used / consumed / scrapped
+    Location       Where it is stored physically
+
+  ACTIONS:
+    Edit button    → Update actual length, qty, heat no, location
+    ↓ Excel        → Download full register as Excel
+    ↓ PDF          → Download full register as PDF
+    ↓ Site template → Download offline update template for site team
+
+7.8 SITE UPDATE (OFFLINE XLS WORKFLOW)
+───────────────────────────────────────
+  This workflow allows site personnel to update remnant
+  quantities offline (e.g. in the yard without internet)
+  and sync at end of day.
+
+  DAILY WORKFLOW:
+  1. Engineer downloads "Site update template" (Excel)
+     → System pre-fills all available remnants
+     → Green columns = editable fields
+     → Grey columns = locked reference fields
+
+  2. Site team takes the Excel to the yard / storage area
+  3. Site team fills in:
+       actual_length_mm  — physically measured length
+       actual_qty        — physical count
+       heat_number       — if not already filled
+       location          — current storage rack/location
+
+  4. At end of day, site team returns to office (or reconnects)
+  5. Upload the filled Excel via "Upload site XLS" button
+     in the Remnant Register page
+
+  6. System updates master remnant register with fresh data
+  7. Upload is logged in Upload History with:
+       Upload number, who uploaded, filename,
+       rows processed, rows updated, rows failed
+
+  ⚠ IMPORTANT:
+    • Do NOT change the rem_no column (it is the key)
+    • Do NOT add or delete rows
+    • Only edit the green/highlighted columns
+
+7.9 MASTER STOCK REGISTER
+──────────────────────────
+  • Full view of all pipes ever received
+  • Shows current theoretical length (after cuts)
+  • Shows which cutting plans used each pipe
+  • Shows how many cuts were made per pipe
+  • Shows latest remnant number generated from each pipe
+  • Use for reconciliation between theoretical and physical stock
+
+7.10 MASTER REMNANT LOG
+────────────────────────
+  • Complete history of ALL remnants ever generated
+  • Shows which cutting plan generated each remnant
+  • Shows which plans and spools the remnant was used in
+  • Full allocation trail from source pipe → remnant → reuse
+  • Download as Excel for audit purposes
+
+7.11 CUTTING ALLOWANCE CHART
+─────────────────────────────
+  Reference chart showing industry-standard cutting allowances
+  by pipe size and material. See Section 9 for detailed explanation.
+
+7.12 USER MANAGEMENT (Admin only)
+──────────────────────────────────
+  Create and manage user accounts.
+
+  Roles:
+    admin            Full access — all modules, user management,
+                     delete, admin functions
+    engineer         Add/edit pipe master, stock, spools, simulate,
+                     view all registers
+    site_supervisor  Add stock, spools, simulate, edit remnants,
+                     upload site files
+    site_user        View registers, edit remnant actual quantities,
+                     upload site files
+    viewer           Read-only access to all modules
+
+═══════════════════════════════════════════════════════════════════════════════
+8. BULK UPLOAD FORMAT REFERENCE
+═══════════════════════════════════════════════════════════════════════════════
+
+PIPE MASTER TEMPLATE
+────────────────────
+Column name           Required   Example value
+item_code             YES        CS-4IN-SCH40
+description           YES        CS Pipe 4" Sch40 A106 Gr.B
+material              YES        Carbon Steel
+size_nominal          YES        4"
+size_od_mm            no         114.3
+wall_thickness_mm     no         6.02
+schedule              no         Sch 40
+standard              no         ASME B36.10
+cutting_allowance_mm  no         5
+
+PIPE STOCK TEMPLATE
+───────────────────
+Column name           Required   Example value
+item_code             YES        CS-4IN-SCH40
+pipe_length_mm        YES        6000
+quantity              YES        10
+tag_prefix            no         P
+heat_number           no         HT-2025-001
+location              no         Yard B-2, Rack 3
+received_date         no         2025-01-15
+
+SPOOL TEMPLATE
+──────────────
+Column name           Required   Example value
+spool_no              YES        SP-001
+iso_no                YES        ISO-101-A
+description           no         Inlet header spool
+part_no               YES        P-1
+item_code             YES        CS-4IN-SCH40
+cut_length_mm         YES        1850
+qty                   no         1
+
+  NOTES:
+  • One row per part cut
+  • For spools with multiple parts: repeat spool_no and iso_no
+  • item_code MUST already exist in Pipe Master before uploading
+  • File formats accepted: .xlsx, .xls, .csv
+  • Download templates from within the app for correct format
+
+═══════════════════════════════════════════════════════════════════════════════
+9. CUTTING ALLOWANCE — HOW IT IS CALCULATED
+═══════════════════════════════════════════════════════════════════════════════
+
+  WHAT IS CUTTING ALLOWANCE?
+  ───────────────────────────
+  When you cut a pipe, you lose material due to:
+    1. KERF — the width of material removed by the cutting tool
+    2. BEVEL PREPARATION — material removed to prepare pipe ends
+       for butt weld joints (per ASME B16.25)
+
+  FORMULA:
+  ─────────
+    Total allowance = Kerf loss + Bevel preparation loss
+
+  EXAMPLE — 4" Carbon Steel pipe, plasma cut:
+  ─────────────────────────────────────────────
+    Plasma torch kerf      = 4 mm
+    Bevel face prep        = 3 mm
+    ────────────────────────────
+    Total allowance        = 7 mm per cut
+
+  So if required cut length = 1850 mm:
+    Actual pipe consumed   = 1850 + 7 = 1857 mm
+
+  INDUSTRY REFERENCE:
+  ────────────────────
+    Small bore (≤ 2"):    3mm kerf + 2mm bevel = 5mm total
+    Medium bore (3"-4"):  4mm kerf + 3mm bevel = 7mm total
+    Large bore (6"-12"):  5mm kerf + 3mm bevel = 8mm total
+    Heavy bore (10"+):    6mm kerf + 4mm bevel = 10mm total
+    HDPE:                 2-3mm kerf only (no bevel for fusion joints)
+    GRE/GRP:              5-6mm kerf + 3-4mm bevel = 8-10mm total
+
+  CUTTING METHODS:
+  ─────────────────
+    Hacksaw / Disc:        Small bore CS and SS
+    Plasma:                All CS, SS, Duplex (fast, wider kerf)
+    Oxy-fuel:              Large bore CS only
+    Band Saw:              HDPE, soft materials
+    Diamond Disc:          GRE/GRP (abrasive materials)
+
+  NOTES:
+  ───────
+  • Cutting allowance is set PER ITEM CODE in the Pipe Master
+  • Default = 5mm (safe value for most small-medium bore CS pipes)
+  • Update per item code based on your specific site cutting method
+  • Refer to the Cutting Allowance Chart in the app for full reference
+  • Standards: ASME B31.3, ASME B16.25, ISO 11922, AWWA C950
+
+═══════════════════════════════════════════════════════════════════════════════
+10. ROLE & PERMISSION REFERENCE
+═══════════════════════════════════════════════════════════════════════════════
+
+  Action                     admin  engineer  site_sup  site_user  viewer
+  ──────────────────────────────────────────────────────────────────────────
+  View all modules             ✓      ✓         ✓         ✓          ✓
+  Add/edit pipe master         ✓      ✓         ✗         ✗          ✗
+  Delete pipe master           ✓      ✗         ✗         ✗          ✗
+  Add pipe stock               ✓      ✓         ✓         ✗          ✗
+  Bulk upload stock            ✓      ✓         ✓         ✗          ✗
+  Add/edit spools              ✓      ✓         ✓         ✗          ✗
+  Run simulation               ✓      ✓         ✓         ✗          ✗
+  Edit remnant quantities      ✓      ✓         ✓         ✓          ✗
+  Upload site XLS              ✓      ✓         ✓         ✓          ✗
+  Download exports             ✓      ✓         ✓         ✓          ✓
+  User management              ✓      ✗         ✗         ✗          ✗
+  Delete records               ✓      ✗         ✗         ✗          ✗
+  View audit log               ✓      ✗         ✗         ✗          ✗
+
+═══════════════════════════════════════════════════════════════════════════════
+11. DATABASE BACKUP & RECOVERY
+═══════════════════════════════════════════════════════════════════════════════
+
+  DATABASE LOCATION:
+    ipcmo/data/ipcmo.db
+
+  BACKUP (copy this single file):
+    Windows:
+      copy C:\Projects\ipcmo\data\ipcmo.db C:\Backups\ipcmo_%date%.db
+
+    Linux/Mac:
+      cp /home/ipcmo/data/ipcmo.db /backups/ipcmo_$(date +%Y%m%d).db
+
+  AUTOMATED DAILY BACKUP (Windows Task Scheduler or Linux cron):
+    Linux cron (daily at midnight):
+      0 0 * * * cp /home/ipcmo/data/ipcmo.db /backups/ipcmo_$(date +\%Y\%m\%d).db
+
+  RESTORE:
+    1. Stop the server (Ctrl+C)
+    2. Replace data/ipcmo.db with your backup file
+    3. Restart the server (npm start)
+
+  ⚠ IMPORTANT: Back up the database file daily, especially before
+    major simulation runs. The database contains ALL your data.
+
+═══════════════════════════════════════════════════════════════════════════════
+12. DEPLOYING TO CLOUD (DIFFERENT LOCATION / COMPANY)
+═══════════════════════════════════════════════════════════════════════════════
+
+  See Section 5 Scenario C for full cloud deployment steps.
+
+  MULTI-COMPANY SETUP:
+  ─────────────────────
+  Option 1: One instance per company
+    • Deploy separate ipcmo installation for each company
+    • Each has its own domain and database
+    • Best for data isolation
+
+  Option 2: One instance, multiple projects
+    • Use the Projects module to separate company data
+    • Create one project per client/company
+    • Users assigned to specific projects (modify API filters)
+
+  ENVIRONMENT VARIABLES (for production):
+    Set these before starting the server:
+
+    Windows:
+      set SESSION_SECRET=your-very-long-random-secret-here
+      set PORT=3000
+      npm start
+
+    Linux/Mac:
+      SESSION_SECRET=your-secret PORT=3000 npm start
+
+    Or create a .env file in the ipcmo folder:
+      SESSION_SECRET=replace-with-64-char-random-string
+      PORT=3000
+
+═══════════════════════════════════════════════════════════════════════════════
+13. TROUBLESHOOTING
+═══════════════════════════════════════════════════════════════════════════════
+
+  PROBLEM: "npm install" fails
+    → Make sure Node.js v18+ is installed: node --version
+    → Check internet connection (downloads packages from npm)
+    → Try: npm install --legacy-peer-deps
+
+  PROBLEM: Cannot connect from other devices
+    → Check server firewall allows port 3000
+    → Windows: Search "Windows Defender Firewall" → Allow port 3000
+    → Make sure all devices are on the same WiFi/network
+    → Use the Network IP shown in terminal, not localhost
+
+  PROBLEM: "Port already in use"
+    → Another process is using port 3000
+    → Change port: set PORT=4000 && npm start (Windows)
+      or PORT=4000 npm start (Linux/Mac)
+
+  PROBLEM: Login fails with correct password
+    → Database may be corrupted — restore from backup
+    → Or run: npm run setup-db (re-creates default admin)
+
+  PROBLEM: Simulation fails with "foreign key" error
+    → Make sure all item codes in spools exist in Pipe Master
+    → Ensure pipe stock has been added for those item codes
+
+  PROBLEM: Excel export is empty
+    → Run the simulation first, then export
+    → Check that the cutting plan has details (view in browser)
+
+  PROBLEM: Site XLS upload shows "NOT_FOUND" for remnants
+    → The rem_no in the uploaded file doesn't match database
+    → Download a fresh template from the app (don't reuse old ones)
+
+═══════════════════════════════════════════════════════════════════════════════
+14. MODIFICATION PROMPT — FOR AI-ASSISTED FUTURE CHANGES
+═══════════════════════════════════════════════════════════════════════════════
+
+  Use the following prompt with Claude or another AI assistant
+  when you want to modify this application:
+
+  ═══════════════════════════════════════════════════════════════
+  SYSTEM CONTEXT PROMPT (paste this before your request):
+  ═══════════════════════════════════════════════════════════════
+
+  I have an application called "Integrated Pipe Cutting Management &
+  Optimizer (IPCMO)" v1.0. It is a Node.js + Express web application
+  using SQLite (via better-sqlite3) as the database. The tech stack is:
+
+  BACKEND:
+  - src/server.js        — Express server, session auth, route mounting
+  - src/db/setup.js      — Database schema creation and seed data
+  - src/db/index.js      — Database connection singleton
+  - src/middleware/auth.js — requireLogin, requireRole, auditLog functions
+  - src/routes/api.js    — All REST API endpoints (/api/...)
+  - src/utils/cuttingEngine.js — Core cutting allocation engine
+  - src/utils/exportUtils.js   — Excel (ExcelJS) and PDF (PDFKit) exports
+
+  FRONTEND:
+  - public/login.html    — Login page (standalone HTML)
+  - public/app.html      — Main single-page application (all pages in one)
+
+  DATABASE TABLES:
+  - users                — User accounts with roles
+  - projects             — Project/company separation
+  - pipe_master          — Item code master (material, size, allowance)
+  - pipe_stock           — Physical pipe inventory (pipe_tag, lengths)
+  - spools               — Isometric/spool register
+  - spool_parts          — Individual cut requirements per spool
+  - cutting_plans        — Generated cutting plan headers
+  - cutting_plan_details — Individual cut allocations per plan
+  - remnants             — Remnant cut pieces register
+  - remnant_usage        — Where each remnant was used
+  - remnant_upload_history — Site XLS upload log
+  - remnant_upload_detail  — Row-level upload detail
+  - audit_log            — All user actions logged
+  - cutting_allowance_chart — Industry standard allowance reference
+
+  CUTTING ENGINE LOGIC (src/utils/cuttingEngine.js):
+  - Remnants are loaded into pool FIRST (priority), sorted by length ASC
+  - Full pipes are loaded AFTER remnants, sorted by length DESC
+  - For each cut: find shortest sufficient piece to minimize waste
+  - Cutting allowance (from pipe_master.cutting_allowance_mm) is added to
+    each cut's required length before allocating
+  - After all cuts: remaining length on each used pipe → new remnant
+
+  ROLES: admin > engineer > site_supervisor > site_user > viewer
+
+  My modification request:
+  [DESCRIBE YOUR CHANGE HERE]
+
+  ═══════════════════════════════════════════════════════════════
+  EXAMPLE MODIFICATION REQUESTS:
+  ═══════════════════════════════════════════════════════════════
+
+  "Add a 'weight (kg)' field to the pipe_master table and show
+   total weight consumed per cutting plan in the export."
+
+  "Add a search/filter bar to the remnant register by item code
+   and size in the frontend table."
+
+  "Add a new module called 'Material Certificates' where I can
+   upload and link PDF mill test certificates to heat numbers."
+
+  "Change the simulation engine to prioritize LONGER remnants
+   first instead of shortest, to use up the bigger pieces."
+
+  "Add email notification (using nodemailer) when a cutting plan
+   is generated, sent to the engineer's email address."
+
+  "Add a 'project' dropdown filter to the pipe stock table so
+   users only see pipes belonging to their project."
+
+═══════════════════════════════════════════════════════════════════════════════
+                          END OF MANUAL — IPCMO v1.0
+         For support, use the modification prompt in Section 14.
+═══════════════════════════════════════════════════════════════════════════════
