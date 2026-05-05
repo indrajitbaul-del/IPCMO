@@ -1,5 +1,5 @@
 # IPCMO v2.4
-### Integrated Pipe Cutting Management & Optimizer
+### Intelligent Pipe Cutting Management & Optimizer
 
 > A server-based pipe cutting management system built for large-scale EPC piping projects. Tracks pipe stock, simulates optimal cut sequences, generates traceable cutting plans, and manages remnants — all without cloud dependency.
 
