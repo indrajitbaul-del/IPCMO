@@ -599,7 +599,12 @@ tbody tr:last-child td{border-bottom:none;}
       </div>
       <div class="card"><div class="card-head"><span class="card-head-title">Spool register</span>
         <div style="display:flex;gap:8px;align-items:center;">
-          <select id="sp-filter" onchange="loadSpools()" style="font-size:11px;padding:4px 8px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);color:#fff;font-family:var(--body);"><option value="">All status</option><option value="pending">Pending</option><option value="simulated">Simulated</option></select>
+          <select id="sp-filter" onchange="handleSpFilterChange()" style="font-size:11px;padding:4px 8px;background:#1e2736;border:1px solid rgba(255,255,255,0.25);color:#f0f4ff;font-family:var(--body);border-radius:5px;cursor:pointer;">
+            <option value="" style="background:#1e2736;color:#f0f4ff;">All status</option>
+            <option value="pending" style="background:#1a2a1a;color:#2ec87a;">&#9679; Pending</option>
+            <option value="simulated" style="background:#1a2336;color:#4a90d9;">&#9679; Simulated</option>
+            <option value="__remove_all__" style="background:#2a1010;color:#e04444;">&#10005; Remove all spools</option>
+          </select>
           <button class="btn btn-sm" style="background:var(--rust2);border-color:var(--rust2);color:#fff;font-family:var(--head);font-size:10px;letter-spacing:.08em;text-transform:uppercase;padding:5px 12px;" onclick="removeSimulatedSpools()">Remove simulated</button>
         </div>
       </div>
@@ -2009,6 +2014,38 @@ async function saveSpool() {
   catch(e) { flash('sp-err',e.message,'err'); }
 }
 function clearSpool() { ['sp-no','sp-iso','sp-desc'].forEach(id=>sv(id,'')); partRowsData=[]; renderPartRows(); }
+function handleSpFilterChange() {
+  const val = document.getElementById('sp-filter').value;
+  if (val === '__remove_all__') {
+    document.getElementById('sp-filter').value = '';
+    removeAllSpools();
+  } else {
+    loadSpools();
+  }
+}
+
+async function removeAllSpools() {
+  const q = currentProject ? `?project_id=${currentProject}` : '';
+  const all = await api('GET', `/api/spools${q}`);
+  if (!all.length) { flash('sp-ok', 'No spools to remove.', 'ok'); return; }
+  const btn = document.querySelector('[onclick="removeSimulatedSpools()"]');
+  if (btn && !btn.dataset.confirmAll) {
+    btn.dataset.confirmAll = '1';
+    const orig = btn.textContent;
+    btn.textContent = `Confirm? Remove ALL ${all.length} spool(s)`;
+    btn.style.background = 'var(--red2)';
+    const reset = () => { btn.textContent = orig; btn.style.background = 'var(--rust2)'; delete btn.dataset.confirmAll; };
+    btn._resetTimer2 = setTimeout(reset, 4000);
+    btn.onclick = async () => {
+      clearTimeout(btn._resetTimer2);
+      reset();
+      btn.onclick = () => removeSimulatedSpools();
+      await _doRemoveSimulated(all);
+    };
+    return;
+  }
+}
+
 async function loadSpools() {
   if (!pipeMasters.length) await loadPipeMaster();
   const status = document.getElementById('sp-filter')?.value || '';
@@ -2030,13 +2067,31 @@ async function loadSpools() {
 }
 async function deleteSpool(id) { if(!confirm('Remove this spool?'))return; await api('DELETE',`/api/spools/${id}`); loadSpools(); }
 async function removeSimulatedSpools() {
-  if (!confirm('Remove ALL simulated spools from this project? This cannot be undone.')) return;
   const q = currentProject ? `?project_id=${currentProject}` : '';
   const all = await api('GET', `/api/spools${q}`);
   const simulated = all.filter(s => s.status === 'simulated');
-  if (!simulated.length) { flash('sp-ok', 'No simulated spools to remove.', 'ok'); return; }
-  // FIX-REMOVE: delete all in parallel with Promise.allSettled so partial failures
-  // don't stop the loop — previously a single linked-spool error would abort early.
+  if (!simulated.length) { flash('sp-ok', 'No simulated spools found.', 'ok'); return; }
+
+  // Inline confirmation — avoids browser confirm() suppression in embedded contexts
+  const btn = document.querySelector('[onclick="removeSimulatedSpools()"]');
+  if (btn && !btn.dataset.confirming) {
+    btn.dataset.confirming = '1';
+    const orig = btn.textContent;
+    btn.textContent = `Confirm? Remove ${simulated.length} spool(s)`;
+    btn.style.background = 'var(--red2)';
+    const reset = () => { btn.textContent = orig; btn.style.background = 'var(--rust2)'; delete btn.dataset.confirming; };
+    btn._resetTimer = setTimeout(reset, 4000);
+    btn.onclick = async () => {
+      clearTimeout(btn._resetTimer);
+      reset();
+      btn.onclick = () => removeSimulatedSpools();
+      await _doRemoveSimulated(simulated);
+    };
+    return;
+  }
+}
+
+async function _doRemoveSimulated(simulated) {
   flash('sp-ok', `Removing ${simulated.length} simulated spool(s)…`, 'ok');
   const results = await Promise.allSettled(
     simulated.map(s => api('DELETE', `/api/spools/${s.id}`))
@@ -2044,9 +2099,12 @@ async function removeSimulatedSpools() {
   const removed = results.filter(r => r.status === 'fulfilled').length;
   const failed  = results.filter(r => r.status === 'rejected').length;
   const msg = failed
-    ? `Removed ${removed}/${simulated.length} spools. ${failed} could not be removed (linked to cutting plans).`
-    : `Removed all ${removed} simulated spool(s).`;
+    ? `Removed ${removed}/${simulated.length} spools. ${failed} could not be removed.`
+    : `Removed all ${removed} simulated spool(s). Register cleared for new batch.`;
   flash('sp-ok', msg, failed ? 'err' : 'ok');
+  // Reset filter to pending so register shows fresh state
+  const filterEl = document.getElementById('sp-filter');
+  if (filterEl) filterEl.value = 'pending';
   await loadSpools();
 }
 
@@ -2409,9 +2467,9 @@ async function openPlanModal(id, planNo) {
           </td>
           <td style="padding:6px 8px;font-family:var(--mono);">${c.item_code || '—'}</td>
           <td style="padding:6px 8px;font-family:var(--mono);">${c.pipe_tag || '—'}</td>
-          <td style="padding:6px 8px;font-family:var(--mono);text-align:right;">${c.required_length_mm}</td>
-          <td style="padding:6px 8px;font-family:var(--mono);text-align:right;color:var(--rust);">${c.cutting_allowance_mm}</td>
-          <td style="padding:6px 8px;font-family:var(--mono);text-align:right;font-weight:700;">${c.actual_cut_mm}</td>
+          <td style="padding:6px 8px;font-family:var(--mono);text-align:right;">${Math.round(c.required_length_mm)}</td>
+          <td style="padding:6px 8px;font-family:var(--mono);text-align:right;color:var(--rust);">${Math.round(c.cutting_allowance_mm)}</td>
+          <td style="padding:6px 8px;font-family:var(--mono);text-align:right;font-weight:700;">${Math.round(c.actual_cut_mm)}</td>
           <td style="padding:6px 8px;"><span class="badge ${c.cut_from==='remnant'?'b-g':'b-s'}">${c.cut_from}</span></td>
         </tr>`).join('')}</tbody>
       </table>
