@@ -49,7 +49,7 @@ app.post('/login', (req, res) => {
   }
   db.prepare("UPDATE users SET last_login=datetime('now') WHERE id=?").run(user.id);
   req.session.user = { id: user.id, username: user.username, full_name: user.full_name, role: user.role, company: user.company, location: user.location };
-  res.json({ ok: true, user: req.session.user });
+  res.json({ ok: true, user: req.session.user, must_change_password: user.must_change_password === 1 });
 });
 
 app.post('/logout', (req, res) => { req.session.destroy(); res.json({ ok: true }); });

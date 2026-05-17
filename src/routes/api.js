@@ -31,7 +31,7 @@ router.post('/auth/change-password', (req, res) => {
   if (!user) return res.status(401).json({ error: 'Not authenticated' });
   if (!bcrypt.compareSync(current, user.password_hash))
     return res.status(400).json({ error: 'Current password incorrect' });
-  p('UPDATE users SET password_hash=? WHERE id=?').run(bcrypt.hashSync(newPass, 10), user.id);
+  p('UPDATE users SET password_hash=?, must_change_password=0 WHERE id=?').run(bcrypt.hashSync(newPass, 10), user.id);
   auditLog(db(), req.session.user.id, 'CHANGE_PASSWORD', 'users', user.id, {}, req.ip);
   res.json({ ok: true });
 });
@@ -42,7 +42,8 @@ router.post('/users/:id/reset-password', requireRole('admin'), (req, res) => {
   if (!newPass || newPass.length < 6) return res.status(400).json({ error: 'Password too short' });
   const user = p('SELECT * FROM users WHERE id=?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
-  p('UPDATE users SET password_hash=? WHERE id=?').run(bcrypt.hashSync(newPass, 10), req.params.id);
+  // Set must_change_password=1 so user is forced to change on next login
+  p('UPDATE users SET password_hash=?, must_change_password=1 WHERE id=?').run(bcrypt.hashSync(newPass, 10), req.params.id);
   auditLog(db(), req.session.user.id, 'ADMIN_RESET_PASSWORD', 'users', req.params.id, {}, req.ip);
   res.json({ ok: true });
 });
@@ -500,6 +501,11 @@ router.post('/pipe-master/bulk', requireRole('admin', 'engineer'), upload.single
     // wt: explicit column > ASME table lookup > WT mentioned in description itself
     const wt    = parseFloat(r.wall_thickness_mm) || fromCode.wt || fromDesc.wt || fromDesc.wall_thickness_mm || null;
     const ca    = parseFloat(r.cutting_allowance_mm) || fromDesc.cutting_allowance_mm || 5;
+    // VALIDATION: cutting allowance sanity check
+    if (ca < 1 || ca > 50) {
+      const msg = `Row ${i+2}: cutting_allowance_mm ${ca} is out of range (valid: 1–50 mm)`;
+      errors.push(msg); errorRows.push({row:i+2,...r,error:msg}); return;
+    }
     try {
       const result = p('INSERT OR IGNORE INTO pipe_master (item_code,description,material,size_nominal,size_od_mm,wall_thickness_mm,schedule,standard,cutting_allowance_mm,project_id,created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
         .run(code, desc, mat, size, od, wt, sch, std, ca, req.body.project_id || null, req.session.user.id);
@@ -711,6 +717,10 @@ router.post('/pipe-stock/bulk', requireRole('admin', 'engineer', 'site_superviso
     const len  = parseFloat(r.pipe_length_mm || r.full_length_mm || 0);
     const qty  = parseInt(r.quantity || r.qty || 1);
     if (!code || !len) { errors.push(`Row ${i + 2}: missing item_code or pipe_length_mm`); return; }
+    // VALIDATION: pipe lengths outside 100–24000 mm are almost certainly data-entry errors
+    if (len < 100)  { errors.push(`Row ${i + 2}: pipe_length_mm ${len} is too short (<100 mm) — possible unit error (metres instead of mm?)`); return; }
+    if (len > 24000){ errors.push(`Row ${i + 2}: pipe_length_mm ${len} exceeds 24,000 mm — check value`); return; }
+    if (qty < 1 || qty > 5000) { errors.push(`Row ${i + 2}: quantity ${qty} is out of range (1–5000)`); return; }
     const master = p('SELECT item_code FROM pipe_master WHERE item_code=?').get(code);
     if (!master) { errors.push(`Row ${i + 2}: item_code "${code}" not in master`); return; }
     validRows.push({ r, code, len, qty, rowIdx: i });
@@ -907,6 +917,19 @@ router.delete('/spools/:id', requireRole('admin', 'engineer', 'site_supervisor')
   res.json({ ok: true });
 });
 
+// ─── SPOOL STATUS UPDATE (confirmed / pending / simulated) ────────────────────
+router.patch('/spools/:id/status', requireRole('admin', 'engineer', 'site_supervisor'), (req, res) => {
+  const { status } = req.body;
+  const allowed = ['pending', 'simulated', 'confirmed'];
+  if (!allowed.includes(status)) return res.status(400).json({ error: 'Invalid status. Must be: ' + allowed.join(', ') });
+  const spool = p('SELECT id, spool_no, iso_no, status FROM spools WHERE id=?').get(req.params.id);
+  if (!spool) return res.status(404).json({ error: 'Spool not found' });
+  p('UPDATE spools SET status=? WHERE id=?').run(status, req.params.id);
+  auditLog(db(), req.session.user.id, 'UPDATE_SPOOL_STATUS', 'spools', req.params.id,
+    { spool_no: spool.spool_no, iso_no: spool.iso_no, from: spool.status, to: status }, req.ip);
+  res.json({ ok: true, id: req.params.id, status });
+});
+
 // Bulk spool upload
 router.post('/spools/bulk', requireRole('admin', 'engineer', 'site_supervisor'), upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file' });
@@ -926,6 +949,10 @@ router.post('/spools/bulk', requireRole('admin', 'engineer', 'site_supervisor'),
     const len  = parseFloat(r.cut_length_mm || r.required_length_mm || 0);
     const qty  = parseInt(r.qty || r.quantity || 1);
     if (!sno || !iso || !part || !code || !len) { errors.push(`Row ${i + 2}: missing required field`); return; }
+    // VALIDATION: cut lengths outside 10–20000 mm are almost certainly data-entry errors
+    if (len < 10)   { errors.push(`Row ${i + 2}: cut_length_mm ${len} is too short (<10 mm) — check value`); return; }
+    if (len > 20000){ errors.push(`Row ${i + 2}: cut_length_mm ${len} exceeds 20,000 mm — possible unit error (metres instead of mm?)`); return; }
+    if (qty < 1 || qty > 999) { errors.push(`Row ${i + 2}: qty ${qty} is out of range (1–999)`); return; }
     if (!p('SELECT item_code FROM pipe_master WHERE item_code=?').get(code)) { errors.push(`Row ${i + 2}: item_code "${code}" not in master`); return; }
     // FIX: composite key = ISO + SPOOL
     const key = `${iso}||${sno}`;
@@ -1168,6 +1195,7 @@ router.get('/cutting-plans/:id', (req, res) => {
   const details  = p(`SELECT cpd.*,
       COALESCE(s.spool_no, cpd.spool_no_snapshot) as spool_no,
       COALESCE(s.iso_no,   cpd.iso_no_snapshot)   as iso_no,
+      s.status as spool_status,
       pm.description, pm.size_nominal, pm.material
     FROM cutting_plan_details cpd
     LEFT JOIN spools s ON cpd.spool_id=s.id
@@ -1375,7 +1403,7 @@ router.delete('/remnants/:id', requireRole('admin', 'engineer'), (req, res) => {
   res.json({ ok: true });
 });
 router.get('/remnants', (req, res) => {
-  const { project_id, status, item_code } = req.query;
+  const { project_id, status, item_code, plan_id } = req.query;
   let sql = `SELECT r.*, pm.description, pm.size_nominal, pm.material, pm.schedule,
     cp.plan_no as source_plan_no
     FROM remnants r
@@ -1386,6 +1414,7 @@ router.get('/remnants', (req, res) => {
   if (project_id) { sql += ' AND (r.project_id=? OR r.project_id IS NULL)'; params.push(project_id); }
   if (status)     { sql += ' AND r.status=?';     params.push(status); }
   if (item_code)  { sql += ' AND r.item_code=?';  params.push(item_code); }
+  if (plan_id)    { sql += ' AND r.source_plan_id=?'; params.push(plan_id); }
   sql += ' ORDER BY r.created_at DESC';
   res.json(p(sql).all(...params));
 });

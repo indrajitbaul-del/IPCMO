@@ -245,6 +245,33 @@ html,body{height:100%;font-family:var(--body);background:var(--ink);overflow:hid
       <div class="spinner"></div>
     </button>
 
+
+    <!-- ── FORCED PASSWORD CHANGE PANEL (hidden until needed) ── -->
+    <div id="force-pw-panel" style="display:none;margin-top:18px;padding:16px;background:rgba(224,123,58,.08);border:1px solid rgba(224,123,58,.35);border-radius:8px;">
+      <div style="font-family:var(--mono);font-size:11px;color:#e07b3a;font-weight:700;margin-bottom:10px;display:flex;align-items:center;gap:6px;">
+        <svg fill="currentColor" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+        Password change required
+      </div>
+      <p style="font-size:11px;color:var(--muted2);margin:0 0 12px;line-height:1.5;">Your account is using a default or temporary password. You must set a new password before continuing.</p>
+      <div class="field" style="margin-bottom:10px;">
+        <label style="font-size:10px;">New password <span style="color:#e07b3a;">(min 8 characters)</span></label>
+        <div class="input-wrap">
+          <svg class="input-icon" fill="currentColor" viewBox="0 0 24 24"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>
+          <input type="password" id="fp-new" placeholder="New password" autocomplete="new-password" onkeydown="if(event.key===\'Enter\')document.getElementById(\'fp-confirm\').focus()">
+        </div>
+      </div>
+      <div class="field" style="margin-bottom:12px;">
+        <label style="font-size:10px;">Confirm new password</label>
+        <div class="input-wrap">
+          <svg class="input-icon" fill="currentColor" viewBox="0 0 24 24"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>
+          <input type="password" id="fp-confirm" placeholder="Confirm password" autocomplete="new-password" onkeydown="if(event.key===\'Enter\')forceChangePassword()">
+        </div>
+      </div>
+      <div id="fp-err" style="display:none;font-size:11px;color:#e07b3a;margin-bottom:8px;"></div>
+      <button onclick="forceChangePassword()" id="fp-btn" style="width:100%;padding:10px;background:linear-gradient(135deg,#e07b3a,#c0621e);border:none;border-radius:6px;color:#fff;font-family:var(--mono);font-size:12px;font-weight:700;cursor:pointer;letter-spacing:.05em;">
+        Set new password &amp; continue
+      </button>
+    </div>
     <div class="divider">
       <div class="divider-line"></div>
       <div class="divider-text">System information</div>
@@ -254,7 +281,7 @@ html,body{height:100%;font-family:var(--body);background:var(--ink);overflow:hid
     <div class="version-strip">
       <div class="version-item">
         <div class="vk">Version</div>
-        <div class="vv highlight">IPCMO v2.4</div>
+        <div class="vv highlight">IPCMO v2.5</div>
       </div>
       <div class="version-item">
         <div class="vk">Platform</div>
@@ -300,6 +327,8 @@ function togglePwd() {
   }
 }
 
+let _loginCurrentPass = '';
+
 async function login() {
   const u = document.getElementById('u').value.trim();
   const p = document.getElementById('p').value;
@@ -328,7 +357,17 @@ async function login() {
     });
     const d = await r.json();
     if (r.ok) {
-      window.location = '/';
+      if (d.must_change_password) {
+        // Show force-change panel — do NOT redirect yet
+        _loginCurrentPass = p;
+        document.getElementById('force-pw-panel').style.display = 'block';
+        document.getElementById('btn').disabled = true;
+        document.getElementById('u').disabled = true;
+        document.getElementById('p').disabled = true;
+        document.getElementById('fp-new').focus();
+      } else {
+        window.location = '/';
+      }
     } else {
       msg.textContent = d.error || 'Invalid username or password.';
       err.classList.add('show');
@@ -341,6 +380,42 @@ async function login() {
     err.classList.add('show');
   }
   btn.classList.remove('loading');
+}
+
+async function forceChangePassword() {
+  const np = document.getElementById('fp-new').value;
+  const cp = document.getElementById('fp-confirm').value;
+  const errEl = document.getElementById('fp-err');
+  const fpBtn = document.getElementById('fp-btn');
+  errEl.style.display = 'none';
+
+  if (!np || np.length < 8) { errEl.textContent = 'Password must be at least 8 characters.'; errEl.style.display = 'block'; return; }
+  if (np !== cp) { errEl.textContent = 'Passwords do not match.'; errEl.style.display = 'block'; return; }
+  if (np === _loginCurrentPass) { errEl.textContent = 'New password must be different from the current password.'; errEl.style.display = 'block'; return; }
+
+  fpBtn.disabled = true;
+  fpBtn.textContent = 'Saving...';
+  try {
+    const r = await fetch('/api/auth/change-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ current: _loginCurrentPass, newPass: np })
+    });
+    const d = await r.json();
+    if (r.ok) {
+      window.location = '/';
+    } else {
+      errEl.textContent = d.error || 'Password change failed.';
+      errEl.style.display = 'block';
+      fpBtn.disabled = false;
+      fpBtn.textContent = 'Set new password & continue';
+    }
+  } catch(e) {
+    errEl.textContent = 'Server error. Please try again.';
+    errEl.style.display = 'block';
+    fpBtn.disabled = false;
+    fpBtn.textContent = 'Set new password & continue';
+  }
 }
 </script>
 </body>

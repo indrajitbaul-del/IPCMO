@@ -17,7 +17,8 @@ const tables = [
   id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL, full_name TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'site_user', company TEXT, location TEXT,
-  active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now')), last_login TEXT)`,
+  active INTEGER DEFAULT 1, must_change_password INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now')), last_login TEXT)`,
 `CREATE TABLE IF NOT EXISTS projects (
   id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE NOT NULL,
   name TEXT NOT NULL, location TEXT, client TEXT, active INTEGER DEFAULT 1,
@@ -103,6 +104,19 @@ function addColumnIfMissing(table, colDef) {
     }
   }
 }
+addColumnIfMissing('users', 'must_change_password INTEGER DEFAULT 0');
+
+// Migration: flag existing admin user if still on default password (Admin@1234)
+try {
+  const existingAdmin = db.prepare("SELECT id, password_hash, must_change_password FROM users WHERE username='admin'").get();
+  if (existingAdmin && existingAdmin.must_change_password !== 1) {
+    const bcryptCheck = require('bcryptjs');
+    if (bcryptCheck.compareSync('Admin@1234', existingAdmin.password_hash)) {
+      db.prepare("UPDATE users SET must_change_password=1 WHERE username='admin'").run();
+      console.log('✓ Migration: admin flagged for mandatory password change (default password detected)');
+    }
+  }
+} catch (e) { /* non-fatal */ }
 addColumnIfMissing('cutting_plan_details', 'iso_no_snapshot TEXT');
 addColumnIfMissing('cutting_plan_details', 'spool_no_snapshot TEXT');
 addColumnIfMissing('cutting_plan_details', 'entry_type TEXT DEFAULT \'auto\'');
@@ -122,9 +136,9 @@ try {
 const adminExists = db.prepare("SELECT id FROM users WHERE username='admin'").get();
 if (!adminExists) {
   const hash = bcrypt.hashSync('Admin@1234', 10);
-  db.prepare('INSERT INTO users (username,password_hash,full_name,role,company) VALUES (?,?,?,?,?)')
-    .run('admin', hash, 'System Administrator', 'admin', 'Default');
-  console.log('✓ Admin created  →  admin / Admin@1234');
+  db.prepare('INSERT INTO users (username,password_hash,full_name,role,company,must_change_password) VALUES (?,?,?,?,?,?)')
+    .run('admin', hash, 'System Administrator', 'admin', 'Default', 1);
+  console.log('✓ Admin created  →  admin / Admin@1234  (password change required on first login)');
 }
 
 // Seed cutting allowance chart

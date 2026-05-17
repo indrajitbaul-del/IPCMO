@@ -309,7 +309,7 @@ tbody tr:last-child td{border-bottom:none;}
     <button class="s-item" onclick="go('projects',this)" id="nav-projects"><svg fill="currentColor" viewBox="0 0 24 24"><path d="M20 6h-2.18c.07-.44.18-.88.18-1.35C18 2.53 15.48 1 13 1c-1.32 0-2.6.5-3.54 1.41L8 3.83l-1.46-1.42C5.6 1.5 4.32 1 3 1 .52 1-2 2.53-2 4.65c0 .47.11.91.18 1.35H-2v14h22V6zm-9.58 0l1.45-1.42C12.68 3.94 12.37 3 13 3c1.48 0 3 1.53 3 3.65c0 .47-.11.91-.18 1.35H8.57l1.85-2z"/></svg><span>Projects</span></button>
     <button class="s-item" onclick="go('users',this)" id="nav-users"><svg fill="currentColor" viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg><span>User Management</span></button>
   </nav>
-  <div class="s-footer"><p>IPCMO v2.4 · Optimised · Secure</p></div>
+  <div class="s-footer"><p>IPCMO v2.5 · Optimised · Secure</p></div>
 </aside>
 <!-- MAIN -->
 <div class="main">
@@ -1043,13 +1043,18 @@ tbody tr:last-child td{border-bottom:none;}
 
 <!-- VIEW CUTTING PLAN MODAL -->
 <div class="modal-bg" id="cp-modal">
-  <div class="modal" style="width:800px;">
+  <div class="modal" style="width:940px;">
     <div class="modal-head"><h3 id="cp-modal-title">Cutting Plan</h3>
-      <div style="display:flex;align-items:center;gap:8px;">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span id="cp-plan-status-badge"></span>
+        <button id="cp-rerun-btn" class="btn btn-sm" style="display:none;background:var(--gold2);border-color:var(--gold2);color:#000;font-family:var(--head);font-size:10px;letter-spacing:.08em;text-transform:uppercase;" onclick="rerunBalanceSpools()">⟳ Re-run Balance Spools</button>
         <a id="cp-export-xlsx" href="#" class="btn btn-g btn-sm">↓ XLS</a>
         <a id="cp-export-pdf" href="#" class="btn btn-o btn-sm">↓ PDF</a>
         <button class="modal-close" onclick="closeModal('cp-modal')">×</button>
       </div>
+    </div>
+    <div id="cp-modal-info" style="padding:10px 16px;background:var(--bg2);border-bottom:1px solid var(--border);font-size:11px;color:var(--muted);display:none;">
+      <span id="cp-modal-info-text"></span>
     </div>
     <div class="modal-body" id="cp-modal-body"></div>
   </div>
@@ -2056,7 +2061,7 @@ async function loadSpools() {
   const body=document.getElementById('sp-body'), empty=document.getElementById('sp-empty');
   if (!spoolsData.length) { body.innerHTML=''; empty.style.display='block'; return; }
   empty.style.display='none';
-  const sc={pending:'b-s',simulated:'b-gn',completed:'b-gn'};
+  const sc={pending:'b-s',simulated:'b-gn',completed:'b-gn',confirmed:'b-g'};
   body.innerHTML = spoolsData.map(s=>`<tr>
     <td class="mono" style="color:var(--gold2);">${s.iso_no}</td><td class="mono">${s.spool_no}</td>
     <td style="font-size:11px;">${s.description||'—'}</td><td class="mono">${s.part_count}</td>
@@ -2413,39 +2418,77 @@ async function loadCuttingPlans() {
   }).join('');
 }
 
+// State for current plan modal
+let _cpModalPlanId = null, _cpModalSpoolIds = [];
+
 async function openPlanModal(id, planNo) {
+  _cpModalPlanId = id;
+  _cpModalSpoolIds = [];
   document.getElementById('cp-modal-title').textContent = `Cutting Plan: ${planNo}`;
   document.getElementById('cp-export-xlsx').href = `/api/cutting-plans/${id}/export/xlsx`;
   document.getElementById('cp-export-pdf').href = `/api/cutting-plans/${id}/export/pdf`;
+  document.getElementById('cp-rerun-btn').style.display = 'none';
+  document.getElementById('cp-modal-info').style.display = 'none';
+  document.getElementById('cp-plan-status-badge').innerHTML = '';
+
   const d = await api('GET',`/api/cutting-plans/${id}`);
   const body = document.getElementById('cp-modal-body');
-  // Group by ISO + Spool combo (with null protection)
+
+  // Group by spool_id to track per-spool confirmed status
   const spoolMap = {};
   d.details.forEach(x => {
-    const iso   = x.iso_no   || '—';
-    const spool = x.spool_no || '—';
-    const key = `${iso}||${spool}`;
-    if (!spoolMap[key]) spoolMap[key] = { iso, spool, cuts: [] };
+    const key = x.spool_id || (x.iso_no + '||' + x.spool_no);
+    if (!spoolMap[key]) spoolMap[key] = {
+      spoolId: x.spool_id, iso: x.iso_no||'—', spool: x.spool_no||'—',
+      spoolStatus: x.spool_status || 'simulated', cuts: [], remnants: {}
+    };
     spoolMap[key].cuts.push(x);
+    // Collect unique remnants generated from this spool's pipes for inline editing
+    if (x.generated_rem_no) spoolMap[key].remnants[x.generated_rem_no] = {
+      remNo: x.generated_rem_no, remId: x.generated_rem_id,
+      theoLen: x.generated_rem_len, actualLen: x.generated_rem_actual
+    };
   });
+
+  // Fetch current spool statuses for spools in this plan
+  const spoolIds = [...new Set(d.details.map(x => x.spool_id).filter(Boolean))];
+  _cpModalSpoolIds = spoolIds;
+  let spoolStatuses = {};
+  if (spoolIds.length) {
+    // Batch fetch via existing spools API
+    const q = currentProject ? `?project_id=${currentProject}` : '';
+    const allSpools = await api('GET', `/api/spools${q}`);
+    allSpools.forEach(s => { if (spoolIds.includes(s.id)) spoolStatuses[s.id] = s.status; });
+  }
+
+  // Fetch remnants from this plan for inline actual-length editing
+  const planRemnants = await api('GET', `/api/remnants?plan_id=${id}`).catch(() => []);
+  const remMap = {};
+  planRemnants.forEach(r => { remMap[r.rem_no] = r; });
+
+  let confirmedCount = 0;
   let html = '';
   for (const [, group] of Object.entries(spoolMap)) {
-    html += `<div style="margin-bottom:16px;border:1px solid var(--border);border-radius:2px;overflow:hidden;">
-      <div style="background:var(--steel);color:#fff;padding:8px 12px;font-family:var(--head);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;display:flex;gap:14px;flex-wrap:wrap;align-items:center;">
+    const spStatus = group.spoolId ? (spoolStatuses[group.spoolId] || 'simulated') : 'simulated';
+    const isConfirmed = spStatus === 'confirmed';
+    if (isConfirmed) confirmedCount++;
+    const headerBg = isConfirmed ? 'var(--green,#2a7a4f)' : 'var(--steel)';
+
+    html += `<div style="margin-bottom:16px;border:1px solid var(--border);border-radius:2px;overflow:hidden;" id="cp-group-${group.spoolId}">
+      <div style="background:${headerBg};color:#fff;padding:8px 12px;font-family:var(--head);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;display:flex;gap:14px;flex-wrap:wrap;align-items:center;">
         <span>ISO: <strong style="color:var(--gold);">${group.iso}</strong></span>
         <span>Spool: <strong style="color:#fff;">${group.spool}</strong></span>
-        <span style="margin-left:auto;font-weight:400;font-size:10px;opacity:.8;">${group.cuts.length} cut(s)</span>
+        <span style="font-size:10px;padding:2px 7px;border-radius:3px;background:rgba(255,255,255,0.15);">${isConfirmed ? '✓ CUT CONFIRMED' : 'simulated'}</span>
+        <span style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+          <span style="font-weight:400;font-size:10px;opacity:.8;">${group.cuts.length} cut(s)</span>
+          ${group.spoolId ? (isConfirmed
+            ? `<button class="btn btn-sm" style="background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.4);color:#fff;font-size:9px;padding:3px 8px;font-family:var(--head);letter-spacing:.06em;" onclick="markSpoolStatus(${group.spoolId},'simulated','cp-group-${group.spoolId}')">↩ Unconfirm</button>`
+            : `<button class="btn btn-sm" style="background:#2a7a4f;border:1px solid #3a9a6f;color:#fff;font-size:9px;padding:3px 8px;font-family:var(--head);letter-spacing:.06em;" onclick="markSpoolStatus(${group.spoolId},'confirmed','cp-group-${group.spoolId}')">✓ Mark as Cut</button>`)
+          : ''}
+        </span>
       </div>
       <table style="width:100%;border-collapse:collapse;font-size:11px;table-layout:fixed;">
-        <colgroup>
-          <col style="width:38%;">
-          <col style="width:14%;">
-          <col style="width:14%;">
-          <col style="width:8%;">
-          <col style="width:8%;">
-          <col style="width:9%;">
-          <col style="width:9%;">
-        </colgroup>
+        <colgroup><col style="width:32%;"><col style="width:13%;"><col style="width:13%;"><col style="width:8%;"><col style="width:7%;"><col style="width:8%;"><col style="width:9%;"></colgroup>
         <thead style="background:var(--bg2);">
           <tr>
             <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border);font-family:var(--head);font-size:10px;letter-spacing:.04em;">ISO / Spool / Part</th>
@@ -2459,14 +2502,14 @@ async function openPlanModal(id, planNo) {
         </thead>
         <tbody>${group.cuts.map(c => `<tr style="border-bottom:1px solid var(--bg2);">
           <td style="padding:6px 8px;font-family:var(--mono);font-size:10px;word-break:break-all;">
-            <span style="color:var(--gold2);">${c.iso_no || '—'}</span>
+            <span style="color:var(--gold2);">${c.iso_no||'—'}</span>
             <span style="color:var(--muted);"> / </span>
-            <span style="color:var(--steel);">${c.spool_no || '—'}</span>
+            <span style="color:var(--steel);">${c.spool_no||'—'}</span>
             <span style="color:var(--muted);"> / </span>
-            <strong style="color:var(--ink);">${c.part_no || '—'}</strong>
+            <strong style="color:var(--ink);">${c.part_no||'—'}</strong>
           </td>
-          <td style="padding:6px 8px;font-family:var(--mono);">${c.item_code || '—'}</td>
-          <td style="padding:6px 8px;font-family:var(--mono);">${c.pipe_tag || '—'}</td>
+          <td style="padding:6px 8px;font-family:var(--mono);">${c.item_code||'—'}</td>
+          <td style="padding:6px 8px;font-family:var(--mono);">${c.pipe_tag||'—'}</td>
           <td style="padding:6px 8px;font-family:var(--mono);text-align:right;">${Math.round(c.required_length_mm)}</td>
           <td style="padding:6px 8px;font-family:var(--mono);text-align:right;color:var(--rust);">${Math.round(c.cutting_allowance_mm)}</td>
           <td style="padding:6px 8px;font-family:var(--mono);text-align:right;font-weight:700;">${Math.round(c.actual_cut_mm)}</td>
@@ -2475,949 +2518,114 @@ async function openPlanModal(id, planNo) {
       </table>
     </div>`;
   }
+
+  // Remnant panel — inline actual length editing for remnants from this plan
+  if (planRemnants.length) {
+    html += `<div style="margin-top:8px;border:1px solid var(--gold2);border-radius:2px;overflow:hidden;">
+      <div style="background:var(--gold2);color:#000;padding:8px 12px;font-family:var(--head);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;">
+        📐 Remnants from this plan — update actual measured length before re-run
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:11px;">
+        <thead style="background:var(--bg2);">
+          <tr>
+            <th style="padding:6px 8px;font-family:var(--head);font-size:10px;letter-spacing:.04em;">Rem No</th>
+            <th style="padding:6px 8px;font-family:var(--head);font-size:10px;letter-spacing:.04em;">Item Code</th>
+            <th style="padding:6px 8px;font-family:var(--head);font-size:10px;letter-spacing:.04em;">Source Pipe</th>
+            <th style="padding:6px 8px;font-family:var(--head);font-size:10px;text-align:right;letter-spacing:.04em;">Theoretical mm</th>
+            <th style="padding:6px 8px;font-family:var(--head);font-size:10px;text-align:right;letter-spacing:.04em;">Actual mm <span style="color:var(--rust);">*</span></th>
+            <th style="padding:6px 8px;font-family:var(--head);font-size:10px;letter-spacing:.04em;">Status</th>
+            <th style="padding:6px 8px;font-family:var(--head);font-size:10px;letter-spacing:.04em;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${planRemnants.map(r => `<tr style="border-bottom:1px solid var(--bg2);" id="rem-row-${r.id}">
+            <td style="padding:6px 8px;font-family:var(--mono);font-weight:700;color:var(--gold2);">${r.rem_no}</td>
+            <td style="padding:6px 8px;font-family:var(--mono);font-size:10px;">${r.item_code}</td>
+            <td style="padding:6px 8px;font-family:var(--mono);font-size:10px;">${r.source_pipe_tag}</td>
+            <td style="padding:6px 8px;font-family:var(--mono);text-align:right;">${Math.round(r.theoretical_length_mm)}</td>
+            <td style="padding:6px 8px;text-align:right;">
+              <input type="number" id="rem-actual-${r.id}" value="${r.actual_length_mm||''}"
+                placeholder="${Math.round(r.theoretical_length_mm)}"
+                style="width:80px;font-family:var(--mono);font-size:11px;text-align:right;padding:3px 5px;border:1px solid var(--gold2);border-radius:3px;background:var(--bg);">
+            </td>
+            <td style="padding:6px 8px;"><span class="badge ${r.status==='available'?'b-gn':'b-mt'}">${r.status}</span></td>
+            <td style="padding:6px 8px;">
+              <button class="btn btn-s btn-sm" onclick="saveRemActualInline(${r.id},'${r.rem_no}')">Save</button>
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+      <div style="padding:8px 12px;font-size:10px;color:var(--muted);">
+        * Enter site-measured actual length. The engine uses <strong>actual_length_mm</strong> when available for re-run allocation.
+      </div>
+    </div>`;
+  }
+
   body.innerHTML = html || '<p style="color:var(--muted);text-align:center;padding:20px;">No details.</p>';
+
+  // Show re-run button and info if any spools are confirmed (physically cut)
+  const totalGroups = Object.keys(spoolMap).length;
+  if (confirmedCount > 0 && confirmedCount < totalGroups) {
+    const balanceCount = totalGroups - confirmedCount;
+    document.getElementById('cp-rerun-btn').style.display = 'inline-flex';
+    document.getElementById('cp-modal-info').style.display = 'block';
+    document.getElementById('cp-modal-info-text').innerHTML =
+      `<strong style="color:var(--gold2);">${confirmedCount}</strong> spool(s) marked as physically cut — <strong>${balanceCount}</strong> balance spool(s) can be re-run after updating remnant lengths.`;
+  } else if (confirmedCount === totalGroups && totalGroups > 0) {
+    document.getElementById('cp-plan-status-badge').innerHTML =
+      '<span style="background:#2a7a4f;color:#fff;font-size:10px;padding:3px 8px;border-radius:3px;font-family:var(--head);letter-spacing:.06em;">✓ ALL CUT</span>';
+  }
+
   document.getElementById('cp-modal').classList.add('open');
 }
 
-// ═══════════════════════════════════════════════════════════
-// REMNANTS
-// ═══════════════════════════════════════════════════════════
-async function loadRemnants() {
-  const q = currentProject?`?project_id=${currentProject}`:'';
-  const rems = await api('GET',`/api/remnants${q}`);
-  document.getElementById('sb-rem').textContent = rems.filter(r=>r.status==='available').length;
-  const body=document.getElementById('rem-body'), empty=document.getElementById('rem-empty');
-  if (!rems.length) { body.innerHTML=''; empty.style.display='block'; return; }
-  empty.style.display='none';
-  const sc={available:'b-gn',partially_used:'b-g',consumed:'b-r',scrapped:'b-mt'};
-  body.innerHTML = rems.map(r=>`<tr>
-    <td class="mono" style="font-weight:700;">${r.rem_no}</td>
-    <td class="mono">${r.item_code}</td>
-    <td style="font-size:11px;">${r.description||'—'}</td>
-    <td>${r.size_nominal||'—'}</td>
-    <td class="mono">${r.heat_number||'—'}</td>
-    <td class="mono">${r.source_pipe_tag}</td>
-    <td class="mono" style="font-size:11px;">${r.source_plan_no||'—'}</td>
-    <td class="mono">${r.theoretical_length_mm?.toLocaleString()}</td>
-    <td class="mono" style="color:var(--gold2);">${r.actual_length_mm?.toLocaleString()||'—'}</td>
-    <td class="mono">${r.theoretical_qty}</td>
-    <td class="mono">${r.actual_qty??'—'}</td>
-    <td><span class="badge ${sc[r.status]||'b-mt'}">${r.status}</span></td>
-    <td style="font-size:11px;">${r.location||'—'}</td>
-    <td><div style="display:flex;gap:4px;">
-      <button class="btn btn-s btn-sm" onclick="openRemEdit(${r.id},'${r.rem_no}',${r.actual_length_mm||'null'},${r.actual_qty||'null'},'${r.heat_number||''}','${r.location||''}','${r.status}')">Edit</button>
-      <button class="btn btn-o btn-sm" onclick="deleteRemnant(${r.id},'${r.rem_no}')">Delete</button>
-    </div></td>
-  </tr>`).join('');
-}
-
-async function deleteRemnant(id, remNo) {
-  if (!confirm(`Delete remnant "${remNo}"?\n\nThis will permanently remove this remnant from the register.\nNote: Remnants that have been used in a cutting plan cannot be deleted.`)) return;
+async function markSpoolStatus(spoolId, status, groupElemId) {
   try {
-    await api('DELETE', `/api/remnants/${id}`);
-    flash('site-up-ok', `Remnant ${remNo} deleted successfully.`, 'ok');
-    loadRemnants();
+    await api('PATCH', `/api/spools/${spoolId}/status`, { status });
+    // Reload the modal to reflect changes
+    const planId = _cpModalPlanId;
+    const planNo = document.getElementById('cp-modal-title').textContent.replace('Cutting Plan: ','');
+    await openPlanModal(planId, planNo);
   } catch(e) {
-    flash('site-up-err', e.message, 'err');
+    alert('Failed to update spool status: ' + e.message);
   }
 }
 
-function openRemEdit(id,remNo,actLen,actQty,heat,loc,status) {
-  sv('rm-id',id); sv('rm-len',actLen||''); sv('rm-qty',actQty||''); sv('rm-heat',heat); sv('rm-loc',loc); sv('rm-status',status);
-  document.getElementById('rem-modal').classList.add('open');
-}
-async function saveRemnant() {
-  const id=v('rm-id');
+async function saveRemActualInline(remId, remNo) {
+  const val = parseFloat(document.getElementById(`rem-actual-${remId}`)?.value);
+  if (!val || val <= 0) { alert('Enter a valid actual length in mm'); return; }
   try {
-    await api('PUT',`/api/remnants/${id}`,{actual_length_mm:v('rm-len')||null,actual_qty:v('rm-qty')||null,heat_number:v('rm-heat'),location:v('rm-loc'),status:v('rm-status')});
-    flash('rm-ok','Remnant updated.','ok'); loadRemnants();
-  } catch(e) { flash('rm-ok',e.message,'err'); }
+    await api('PUT', `/api/remnants/${remId}`, { actual_length_mm: val });
+    const row = document.getElementById(`rem-row-${remId}`);
+    if (row) row.style.background = 'rgba(42,122,79,0.12)';
+    flash('cp-inline-ok', `${remNo} updated: actual length = ${val}mm`, 'ok');
+  } catch(e) { alert('Failed to save remnant: ' + e.message); }
 }
 
-async function uploadSiteFile(file) {
-  if (!file) return;
-  const fd = new FormData(); fd.append('file',file);
-  try {
-    const r = await uploadFile('/api/remnants/site-upload',fd);
-    flash('site-up-ok',`Upload complete: ${r.updated} updated, ${r.failed} failed (${r.total} total rows).`,'ok');
-    loadRemnants();
-  } catch(e) { flash('site-up-err',e.message,'err'); }
-}
+async function rerunBalanceSpools() {
+  if (!_cpModalPlanId) return;
+  const q = currentProject ? `?project_id=${currentProject}` : '';
+  const allSpools = await api('GET', `/api/spools${q}`);
+  // Balance = spools in this plan that are still 'simulated' (not confirmed)
+  const balanceSpools = allSpools.filter(s => _cpModalSpoolIds.includes(s.id) && s.status === 'simulated');
+  if (!balanceSpools.length) { alert('No balance spools to re-run. All spools in this plan are confirmed.'); return; }
 
-// ═══════════════════════════════════════════════════════════
-// MASTER STOCK & REMNANT LOG
-// ═══════════════════════════════════════════════════════════
-async function loadMasterStock() {
-  const rows = await api('GET','/api/master-stock');
-  const body=document.getElementById('ms-body'), empty=document.getElementById('ms-empty');
-  const sc={available:'b-gn',partial:'b-g',consumed:'b-r'};
-  if (!rows.length) { body.innerHTML=''; empty.style.display='block'; return; }
-  empty.style.display='none';
-  body.innerHTML = rows.map(r=>`<tr>
-    <td class="mono">${r.pipe_tag}</td><td class="mono">${r.item_code}</td>
-    <td style="font-size:11px;">${r.description||'—'}</td><td>${r.size_nominal||'—'}</td>
-    <td style="font-size:11px;">${r.material||'—'}</td><td class="mono">${r.heat_number||'—'}</td>
-    <td class="mono">${r.full_length_mm?.toLocaleString()}</td>
-    <td class="mono" style="font-weight:700;">${r.current_length_mm?.toLocaleString()}</td>
-    <td class="mono" style="color:var(--rust);">${r.total_used_mm?.toLocaleString()}</td>
-    <td><span class="badge ${sc[r.status]||'b-mt'}">${r.status}</span></td>
-    <td style="font-size:10px;font-family:var(--mono);">${r.plan_nos||'—'}</td>
-    <td class="mono">${r.cut_count}</td>
-    <td class="mono" style="color:var(--gold2);">${r.latest_rem_no||'—'}</td>
-  </tr>`).join('');
-}
-
-async function loadMasterRemnant() {
-  const rows = await api('GET','/api/master-remnant-log');
-  const body=document.getElementById('mr-body'), empty=document.getElementById('mr-empty');
-  const sc={available:'b-gn',partially_used:'b-g',consumed:'b-r',scrapped:'b-mt'};
-  if (!rows.length) { body.innerHTML=''; empty.style.display='block'; return; }
-  empty.style.display='none';
-  body.innerHTML = rows.map(r=>`<tr>
-    <td class="mono" style="font-weight:700;">${r.rem_no}</td><td class="mono">${r.item_code}</td>
-    <td>${r.size_nominal||'—'}</td><td class="mono">${r.heat_number||'—'}</td>
-    <td class="mono" style="font-size:10px;">${r.generated_in_plan||'—'}</td>
-    <td class="mono">${r.source_pipe_tag}</td>
-    <td class="mono">${r.theoretical_length_mm?.toLocaleString()}</td>
-    <td class="mono" style="color:var(--gold2);">${r.actual_length_mm?.toLocaleString()||'—'}</td>
-    <td><span class="badge ${sc[r.status]||'b-mt'}">${r.status}</span></td>
-    <td style="font-size:10px;font-family:var(--mono);">${r.used_in_plans||'—'}</td>
-    <td style="font-size:10px;font-family:var(--mono);">${r.allocated_to_spools||'—'}</td>
-  </tr>`).join('');
-}
-
-async function loadAllowanceChart() {
-  const rows = await api('GET','/api/cutting-allowance-chart');
-  const body=document.getElementById('chart-body');
-  body.innerHTML = rows.map(r=>`<tr>
-    <td>${r.size_nominal}</td><td>${r.material}</td><td class="mono">${r.od_mm||'—'}</td>
-    <td style="font-size:11px;">${r.cutting_method}</td>
-    <td class="mono">${r.allowance_mm}</td><td class="mono">${r.bevel_allowance_mm}</td>
-    <td class="mono" style="font-weight:700;color:var(--rust);">${r.total_mm}</td>
-    <td style="font-size:10px;">${r.standard}</td>
-    <td style="font-size:10px;color:var(--muted);">${r.notes||'—'}</td>
-  </tr>`).join('');
-}
-
-// ═══════════════════════════════════════════════════════════
-// USERS
-// ═══════════════════════════════════════════════════════════
-async function loadUsers() {
-  const users = await api('GET','/api/users');
-  const body=document.getElementById('u-body');
-  const rc={admin:'b-r',engineer:'b-s',site_supervisor:'b-g',site_user:'b-gn',viewer:'b-mt'};
-  body.innerHTML = users.map(u=>`<tr>
-    <td class="mono">${u.username}</td><td>${u.full_name}</td>
-    <td><span class="badge ${rc[u.role]||'b-mt'}">${u.role}</span></td>
-    <td>${u.company||'—'}</td><td>${u.location||'—'}</td>
-    <td style="font-size:11px;">${u.last_login?.split('T')[0]||'Never'}</td>
-    <td><span class="badge ${u.active?'b-gn':'b-r'}">${u.active?'Active':'Inactive'}</span></td>
-  </tr>`).join('');
-}
-async function addUser() {
-  const body={username:v('u-user'),password:v('u-pass'),full_name:v('u-name'),role:v('u-role'),company:v('u-co'),location:v('u-loc')};
-  try { await api('POST','/api/users',body); flash('u-ok','User created.','ok'); loadUsers(); }
-  catch(e) { flash('u-err',e.message,'err'); }
-}
-
-// ═══════════════════════════════════════════════════════════
-// BULK FILE HANDLING
-// ═══════════════════════════════════════════════════════════
-async function handleBulkFile(prefix, file) {
-  if (!file) return;
-  const fd = new FormData(); fd.append('file', file);
-  if (currentProject) fd.append('project_id', currentProject);
-  const endpoints = { pm:'/api/pipe-master/bulk', ps:'/api/pipe-stock/bulk', sp:'/api/spools/bulk' };
-  const okIds  = { pm:'pmb-ok',  ps:'psb-ok',  sp:'spb-ok'  };
-  const errIds = { pm:'pmb-err', ps:'psb-err', sp:'spb-err' };
-  try {
-    const r = await uploadFile(endpoints[prefix], fd);
-    const added = r.added || r.spoolsAdded || 0;
-    const errCount = r.errors?.length || 0;
-    const okEl  = document.getElementById(okIds[prefix]);
-    const errEl = document.getElementById(errIds[prefix]);
-
-    // Success message
-    if (okEl) okEl.innerHTML = `<span style="color:var(--green);">✓ Imported ${added} record(s). ${r.total ? r.total+' rows processed.' : ''}</span>`;
-    if (okEl) okEl.style.display = 'block';
-
-    // Error display with XLS download button
-    if (errCount > 0 && errEl) {
-      let errHtml = `<div style="font-weight:700;color:var(--rust);margin-bottom:6px;">⚠ ${errCount} row(s) had errors:</div>`;
-      errHtml += r.errors.slice(0, 8).map(e => `<div style="font-size:11px;color:var(--rust);">• ${e}</div>`).join('');
-      if (errCount > 8) errHtml += `<div style="font-size:11px;color:var(--muted);">... and ${errCount-8} more</div>`;
-      if (r.errorXls) {
-        errHtml += `<div style="margin-top:8px;">
-          <a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${r.errorXls}"
-             download="UploadErrors_${prefix}_${new Date().toISOString().split('T')[0]}.xlsx"
-             class="btn btn-sm" style="background:var(--rust);color:#fff;border-color:var(--rust);font-size:11px;">
-            ↓ Download Error Log (Excel)
-          </a>
-        </div>`;
-      }
-      errEl.innerHTML = errHtml;
-      errEl.style.display = 'block';
-    } else if (errEl) {
-      errEl.innerHTML = ''; errEl.style.display = 'none';
-    }
-
-    if (prefix === 'pm') loadPipeMaster();
-    if (prefix === 'ps') loadStock();
-    if (prefix === 'sp') loadSpools();
-  } catch(e) {
-    const errEl = document.getElementById(errIds[prefix]);
-    if (errEl) { errEl.textContent = '✗ ' + e.message; errEl.style.display = 'block'; }
-  }
-}
-function handleDrop(prefix, e) { e.preventDefault(); e.currentTarget.classList.remove('over'); const f=e.dataTransfer.files[0]; if(!f) return; if(prefix==='simb') handleBatchXLS(f); else handleBulkFile(prefix,f); }
-
-// ═══════════════════════════════════════════════════════════
-// HELPERS
-// ═══════════════════════════════════════════════════════════
-function v(id) { return document.getElementById(id)?.value||''; }
-function sv(id, val) { const el=document.getElementById(id); if(el) el.value=val; }
-function updateItemCodeSelects() {
-  document.querySelectorAll('.item-code-sel').forEach(sel=>{ const cur=sel.value; sel.innerHTML='<option value="">— select —</option>'+pipeMasters.map(m=>`<option value="${m.item_code}" ${m.item_code===cur?'selected':''}>${m.item_code}</option>`).join(''); });
-  const psSel=document.getElementById('ps-code');
-  if (psSel) { const cur=psSel.value; psSel.innerHTML='<option value="">— select —</option>'+pipeMasters.map(m=>`<option value="${m.item_code}" ${m.item_code===cur?'selected':''}>${m.item_code} — ${m.description}</option>`).join(''); }
-}
-function closeModal(id) { document.getElementById(id).classList.remove('open'); }
-function viewPlan(planNo) {
-  // Navigate to cutting plans page then open the specific plan
-  const cpBtn = document.querySelector('.s-item[onclick*="cutting-plans"]');
-  go('cutting-plans', cpBtn);
-  // After load, find and open the plan
-  setTimeout(async () => {
-    const plans = await api('GET', '/api/cutting-plans');
-    const plan = plans.find(p => p.plan_no === planNo);
-    if (plan) openPlanModal(plan.id, plan.plan_no);
-  }, 600);
-}
-// ═══════════════════════════════════════════════════════════
-// DEMO — REMNANT IMPACT ANALYSIS
-// ═══════════════════════════════════════════════════════════
-let demoCuts = [];
-
-function loadDemoPage() {
-  document.getElementById('demo-result').style.display = 'none';
-  if (!demoCuts.length) {
-    // Pre-load a realistic example scenario
-    demoCuts = [
-      { id: 1, len: 1850, qty: 2, label: 'Spool 1 – Part P-1' },
-      { id: 2, len: 950,  qty: 3, label: 'Spool 1 – Part P-2' },
-      { id: 3, len: 2200, qty: 1, label: 'Spool 1 – Part P-3' },
-      { id: 4, len: 1400, qty: 2, label: 'Spool 2 – Part P-1' },
-      { id: 5, len: 750,  qty: 4, label: 'Spool 2 – Part P-2' },
-      { id: 6, len: 3100, qty: 1, label: 'Spool 3 – Part P-1' },
-    ];
-  }
-  renderDemoCuts();
-}
-
-function addDemoCut() {
-  const id = Date.now();
-  demoCuts.push({ id, len: 1500, qty: 1, label: `Cut ${demoCuts.length + 1}` });
-  renderDemoCuts();
-}
-
-function renderDemoCuts() {
-  const list = document.getElementById('demo-cuts-list');
-  list.innerHTML = demoCuts.map((c, i) => `
-    <div style="display:grid;grid-template-columns:2fr 120px 80px auto;gap:8px;align-items:center;background:var(--bg);border:1px solid var(--border);padding:8px 10px;border-radius:2px;">
-      <input value="${c.label}" placeholder="Label (e.g. Spool 1 – P-1)"
-        style="font-size:12px;padding:6px 8px;border:1px solid var(--border);background:#fff;color:var(--ink);border-radius:2px;"
-        onchange="demoCuts[${i}].label=this.value">
-      <div style="display:flex;align-items:center;gap:4px;">
-        <input type="number" value="${c.len}" min="100" placeholder="mm"
-          style="font-size:12px;padding:6px 8px;border:1px solid var(--border);background:#fff;color:var(--ink);border-radius:2px;width:100%;"
-          onchange="demoCuts[${i}].len=parseFloat(this.value)||0">
-        <span style="font-size:10px;color:var(--muted);">mm</span>
-      </div>
-      <div style="display:flex;align-items:center;gap:4px;">
-        <span style="font-size:10px;color:var(--muted);">Qty</span>
-        <input type="number" value="${c.qty}" min="1" max="20"
-          style="font-size:12px;padding:6px 8px;border:1px solid var(--border);background:#fff;color:var(--ink);border-radius:2px;width:100%;"
-          onchange="demoCuts[${i}].qty=parseInt(this.value)||1">
-      </div>
-      <button onclick="demoCuts.splice(${i},1);renderDemoCuts();"
-        style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px;padding:0 4px;line-height:1;">×</button>
-    </div>`).join('');
-}
-
-// ── CORE DEMO ENGINE ──────────────────────────────────────────────────────────
-function runDemo() {
-  const pipeLen   = parseFloat(document.getElementById('demo-pipelen').value) || 6000;
-  const pipeQty   = parseInt(document.getElementById('demo-pipeqty').value) || 5;
-  const allowance = parseFloat(document.getElementById('demo-allowance').value) || 5;
-
-  if (!demoCuts.length) { flash('demo-err', 'Add at least one cut requirement.', 'err'); return; }
-  if (demoCuts.some(c => !c.len || c.len <= 0)) { flash('demo-err', 'All cuts need a valid length.', 'err'); return; }
-
-  // Expand cuts by qty
-  const allCuts = [];
-  demoCuts.forEach(c => {
-    for (let q = 0; q < (c.qty || 1); q++) allCuts.push({ label: c.label, len: c.len, needed: c.len + allowance });
+  // Close modal, navigate to simulation page, pre-select these spools
+  closeModal('cp-modal');
+  go('simulate');
+  await new Promise(r => setTimeout(r, 400)); // wait for page render
+  await loadSimPage();
+  // Pre-check the balance spool checkboxes
+  const ids = new Set(balanceSpools.map(s => s.id));
+  document.querySelectorAll('#sim-spool-list input[type=checkbox]').forEach(cb => {
+    const sid = parseInt(cb.dataset.spoolId || cb.value);
+    if (ids.has(sid)) { cb.checked = true; cb.dispatchEvent(new Event('change')); }
   });
-
-  // ── Simulation WITHOUT remnants ───────────────────────────────────────────
-  // Always uses a fresh full pipe for every cut sequence
-  // A new pipe is opened whenever current doesn't fit — leftovers DISCARDED
-  const withoutResult = simulateWithout(allCuts, pipeLen, pipeQty);
-
-  // ── Simulation WITH remnants ──────────────────────────────────────────────
-  // Remnants from previous cuts are reused before opening new pipes
-  const withResult = simulateWith(allCuts, pipeLen, pipeQty);
-
-  // Render
-  renderDemoResult(withoutResult, withResult, pipeLen, pipeQty, allowance, allCuts);
-  document.getElementById('demo-result').style.display = 'block';
-  document.getElementById('demo-setup-card').scrollIntoView({ behavior: 'smooth' });
+  // Show info banner
+  flash('sim-ok', `${balanceSpools.length} balance spool(s) pre-selected. Update remnant lengths first if needed, then run.`, 'ok');
 }
 
-function simulateWithout(cuts, pipeLen, maxPipes) {
-  // WITHOUT remnants: First-Fit greedy in insertion order
-  // Cuts in INPUT order — shows why order-dependence creates fragmentation
-  // Leftovers on every pipe are permanently DISCARDED (no tracking)
-  const pipes = [];
-  const failed = [];
 
-  function openPipe() {
-    if (pipes.length >= maxPipes) return null;
-    const pipe = { id: `PIPE-${String(pipes.length+1).padStart(2,'0')}`, full:pipeLen, remaining:pipeLen, cuts:[], opened:true };
-    pipes.push(pipe);
-    return pipe;
-  }
-
-  let currentPipe = openPipe();
-  cuts.forEach(cut => {
-    if (currentPipe && currentPipe.remaining >= cut.needed) {
-      currentPipe.cuts.push({ label:cut.label, len:cut.len, needed:cut.needed });
-      currentPipe.remaining -= cut.needed;
-    } else {
-      // Abandon current pipe remainder as waste
-      currentPipe = openPipe();
-      if (currentPipe && currentPipe.remaining >= cut.needed) {
-        currentPipe.cuts.push({ label:cut.label, len:cut.len, needed:cut.needed });
-        currentPipe.remaining -= cut.needed;
-      } else { failed.push(cut); }
-    }
-  });
-  return { pipes, failed, mode:'without' };
-}
-
-function simulateWith(cuts, pipeLen, maxPipes) {
-  // ═══════════════════════════════════════════════════════════════
-  // IPCMO v2.1 ALGORITHM — BEST-FIT DECREASING (BFD)
-  // Matches the server-side cuttingEngine.js exactly
-  // ═══════════════════════════════════════════════════════════════
-  // PHASE 0: Pre-sort cuts largest → smallest (KEY to v2.1)
-  const sortedCuts = [...cuts].sort((a, b) => b.needed - a.needed);
-
-  const pipes = [];          // opened full pipes
-  const remnantPool = [];    // generated remnants available for reuse
-  const failed = [];
-  let remSeq = 1;
-
-  // Helper: open a new pipe from stock
-  function openPipe() {
-    if (pipes.length >= maxPipes) return null;
-    const pipe = {
-      id: `PIPE-${String(pipes.length+1).padStart(2,'0')}`,
-      full: pipeLen, remaining: pipeLen,
-      cuts: [], opened: true
-    };
-    pipes.push(pipe);
-    return pipe;
-  }
-
-  // Helper: when a pipe is no longer used, log its balance as a remnant
-  function logRemnant(source) {
-    if (source && source.remaining >= 1) {
-      remnantPool.push({
-        id: `REM-${String(remSeq++).padStart(3,'0')}`,
-        origLen: source.remaining,  // track original for display
-        remaining: source.remaining,
-        fromPipe: source.id || source.fromPipe,
-        cuts: [], consumed: false
-      });
-    }
-  }
-
-  // PHASE 1: Remnant-First with Best-Fit (shortest sufficient remnant)
-  // PHASE 2: Stock Best-Fit Decreasing (tightest-fitting pipe)
-  // PHASE 3: Gap-fill (second pass for any still-unplaced cuts)
-
-  // Working state: track which pipe is currently "open" for sequential cutting
-  // We maintain openPipes as an array we can search for BFD
-  const activePipes = []; // all currently opened stock pipes with remaining space
-  const cutResults = [];  // same order as sortedCuts
-
-  const unplacedAfterP1 = [];
-
-  // ─── PHASE 1: Remnant-First ───────────────────────────────────
-  for (const cut of sortedCuts) {
-    // Find shortest sufficient remnant (Best-Fit on remnants)
-    const eligible = remnantPool
-      .filter(r => !r.consumed && r.remaining >= cut.needed)
-      .sort((a, b) => a.remaining - b.remaining);
-
-    if (eligible.length > 0) {
-      const rem = eligible[0];
-      if (!rem.usedForCuts) rem.usedForCuts = [];
-      rem.usedForCuts.push({ label:cut.label, len:cut.len, needed:cut.needed });
-      rem.cuts.push({ label:cut.label, len:cut.len, needed:cut.needed, fromRemnantId:rem.id });
-      rem.remaining -= cut.needed;
-      if (rem.remaining < 1) rem.consumed = true;
-      cutResults.push({ cut, source:'remnant', remId:rem.id });
-    } else {
-      unplacedAfterP1.push(cut);
-    }
-  }
-
-  const unplacedAfterP2 = [];
-
-  // ─── PHASE 2: Stock BFD ───────────────────────────────────────
-  // For each unplaced cut (still sorted largest→smallest),
-  // find the stock pipe with smallest remaining space that still fits
-  for (const cut of unplacedAfterP1) {
-    // Search active (opened) pipes first
-    const eligible = activePipes
-      .filter(p => p.remaining >= cut.needed)
-      .sort((a, b) => a.remaining - b.remaining); // tightest fit first
-
-    if (eligible.length > 0) {
-      // Best-fit: use the pipe with least wasted space
-      const bestPipe = eligible[0];
-      bestPipe.cuts.push({ label:cut.label, len:cut.len, needed:cut.needed, fromRemnantId:null });
-      bestPipe.remaining -= cut.needed;
-      cutResults.push({ cut, source:'pipe', pipeId:bestPipe.id });
-    } else {
-      // No active pipe fits — open a new one
-      // Before opening, log any pipe that will never fit another cut
-      // (BFD property: if this cut is the smallest remaining and doesn't fit, pipe is spent)
-      const newPipe = openPipe();
-      if (newPipe) {
-        activePipes.push(newPipe);
-        if (newPipe.remaining >= cut.needed) {
-          newPipe.cuts.push({ label:cut.label, len:cut.len, needed:cut.needed, fromRemnantId:null });
-          newPipe.remaining -= cut.needed;
-          cutResults.push({ cut, source:'pipe', pipeId:newPipe.id });
-        } else {
-          unplacedAfterP2.push(cut);
-        }
-      } else {
-        unplacedAfterP2.push(cut);
-      }
-    }
-  }
-
-  // ─── PHASE 3: Gap-Fill ────────────────────────────────────────
-  // Second pass: try placing failed cuts into any available gap
-  for (const cut of unplacedAfterP2) {
-    // Try any active pipe gap (first-fit this time)
-    const fitPipe = activePipes.find(p => p.remaining >= cut.needed);
-    if (fitPipe) {
-      fitPipe.cuts.push({ label:cut.label, len:cut.len, needed:cut.needed, fromRemnantId:null });
-      fitPipe.remaining -= cut.needed;
-      cutResults.push({ cut, source:'pipe', pipeId:fitPipe.id });
-    } else {
-      // Try opening another pipe
-      const newPipe = openPipe();
-      if (newPipe) {
-        activePipes.push(newPipe);
-        newPipe.cuts.push({ label:cut.label, len:cut.len, needed:cut.needed, fromRemnantId:null });
-        newPipe.remaining -= cut.needed;
-        cutResults.push({ cut, source:'pipe', pipeId:newPipe.id });
-      } else {
-        failed.push(cut);
-      }
-    }
-  }
-
-  // ─── PHASE 4: Generate remnants from pipe leftovers ──────────
-  // All used pipes with remaining balance > 0 become new remnants
-  activePipes.forEach(pipe => {
-    if (pipe.remaining >= 1) {
-      remnantPool.push({
-        id: `REM-${String(remSeq++).padStart(3,'0')}`,
-        origLen: pipe.remaining,
-        remaining: pipe.remaining,
-        fromPipe: pipe.id,
-        cuts: [], consumed: false,
-        generated: true  // flag: available for next simulation
-      });
-    }
-  });
-
-  // Also keep partial remnants from Phase 1 that weren't fully consumed
-  remnantPool.forEach(r => {
-    if (!r.consumed && !r.generated && r.remaining >= 1) {
-      r.generated = true;  // still available
-    }
-  });
-
-  return { pipes, remnantPool, failed, mode:'with', sortedCuts };
-}
-
-// ── RENDER RESULTS ────────────────────────────────────────────────────────────
-function renderDemoResult(withoutR, withR, pipeLen, pipeQty, allowance, allCuts) {
-  const totalReqLen    = allCuts.reduce((a, c) => a + c.len, 0);
-  const totalActLen    = allCuts.reduce((a, c) => a + c.needed, 0);
-  const totalAllowance = totalActLen - totalReqLen;
-
-  const withoutPipesUsed  = withoutR.pipes.length;
-  const withPipesUsed     = withR.pipes.length;
-  const pipesSaved        = withoutPipesUsed - withPipesUsed;
-
-  const withoutWaste = withoutR.pipes.reduce((a, p) => a + p.remaining, 0);
-  // With remnants (v2.1 BFD): true waste = pipe remainder NOT saved as a usable remnant
-  // remnantPool contains both consumed (fully used) and still-available remnants
-  const withRemAvail = withR.remnantPool
-    ? withR.remnantPool.filter(r => !r.consumed).reduce((a,r) => a + r.remaining, 0)
-    : 0;
-  // True waste = (total pipe opened) - (total cuts placed) - (remnants tracked for reuse)
-  const withTotalOpened = withR.pipes.length * pipeLen;
-  const withTotalCuts   = allCuts.reduce((a, c) => a + c.needed, 0);
-  const withWaste       = Math.max(0, withTotalOpened - withTotalCuts - withRemAvail);
-
-  const withoutTotalMat = withoutPipesUsed * pipeLen;
-  const withTotalMat    = withPipesUsed * pipeLen;
-  const matSaved        = withoutTotalMat - withTotalMat;
-  const pctSaved        = withoutTotalMat > 0 ? ((matSaved / withoutTotalMat) * 100).toFixed(1) : 0;
-
-  // Headline metrics
-  document.getElementById('demo-headline').innerHTML = `
-    <div style="background:var(--ink);color:#fff;border-radius:2px;padding:20px 22px;text-align:center;">
-      <div style="font-family:var(--head);font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;">Pipes consumed (without)</div>
-      <div style="font-family:var(--mono);font-size:36px;font-weight:700;color:#e07070;">${withoutPipesUsed}</div>
-      <div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:4px;">${(withoutPipesUsed * pipeLen / 1000).toFixed(1)} m of pipe</div>
-    </div>
-    <div style="background:var(--ink);color:#fff;border-radius:2px;padding:20px 22px;text-align:center;">
-      <div style="font-family:var(--head);font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;">Pipes consumed (with remnants)</div>
-      <div style="font-family:var(--mono);font-size:36px;font-weight:700;color:#2ec27e;">${withPipesUsed}</div>
-      <div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:4px;">${(withPipesUsed * pipeLen / 1000).toFixed(1)} m of pipe</div>
-    </div>
-    <div style="background:var(--gold);color:#fff;border-radius:2px;padding:20px 22px;text-align:center;">
-      <div style="font-family:var(--head);font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.7);margin-bottom:8px;">You save</div>
-      <div style="font-family:var(--mono);font-size:36px;font-weight:700;">${pipesSaved >= 0 ? pipesSaved : 0} pipe${pipesSaved !== 1 ? 's' : ''}</div>
-      <div style="font-family:var(--mono);font-size:12px;color:rgba(255,255,255,.8);margin-top:4px;">${(matSaved / 1000).toFixed(2)} m · ${pctSaved}% less material</div>
-    </div>`;
-
-  // WITHOUT panel
-  document.getElementById('demo-without').innerHTML = buildSummaryPanel(withoutR, pipeLen, false);
-
-  // WITH panel
-  document.getElementById('demo-with').innerHTML = buildSummaryPanel(withR, pipeLen, true);
-
-  // Pipe visual
-  document.getElementById('demo-pipe-visual').innerHTML = buildPipeVisual(withoutR, withR, pipeLen);
-
-  // Savings detail
-  document.getElementById('demo-savings').innerHTML = buildSavingsPanel(withoutR, withR, pipeLen, allCuts, allowance, pipesSaved, matSaved, pctSaved);
-}
-
-function buildSummaryPanel(result, pipeLen, useRemnants) {
-  const totalOpened   = result.pipes.length * pipeLen;
-  const totalUsed     = result.pipes.reduce((a, p) => a + (pipeLen - p.remaining), 0);
-  const totalWaste    = result.pipes.reduce((a, p) => a + p.remaining, 0);
-  // For WITH mode: waste = only what's truly unusable (consumed remnants already counted)
-  // efficiency = how much of opened pipe went to actual cuts
-  const cutLen        = result.pipes.reduce((a, p) => a + p.cuts.reduce((s, c) => s + c.needed, 0), 0);
-  const remUsedLen    = useRemnants && result.remnantPool
-    ? result.remnantPool.filter(r => r.consumed || r.cuts?.length > 0).reduce((a, r) => a + (r.cuts?.reduce((s, c) => s + c.needed, 0) || 0), 0)
-    : 0;
-  const totalCutMm    = cutLen + remUsedLen;
-  const efficiency    = totalOpened > 0 ? ((totalCutMm / totalOpened) * 100).toFixed(1) : 0;
-  // True waste = opened pipe not used for cuts and not available as remnant
-  const remAvailLen   = useRemnants && result.remnantPool
-    ? result.remnantPool.filter(r => !r.consumed).reduce((a, r) => a + r.remaining, 0)
-    : 0;
-  const trueWaste     = totalWaste - remAvailLen;
-
-  let html = `
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px;">
-      <div style="text-align:center;padding:10px;background:var(--bg);border-radius:2px;">
-        <div style="font-family:var(--mono);font-size:22px;font-weight:700;color:${useRemnants ? 'var(--green)' : 'var(--rust)'};">${result.pipes.length}</div>
-        <div style="font-size:10px;color:var(--muted);font-family:var(--head);letter-spacing:.06em;text-transform:uppercase;">Pipes used</div>
-      </div>
-      <div style="text-align:center;padding:10px;background:var(--bg);border-radius:2px;">
-        <div style="font-family:var(--mono);font-size:22px;font-weight:700;color:${trueWaste > 1000 ? 'var(--rust)' : 'var(--ink)'};">${(trueWaste/1000).toFixed(2)}m</div>
-        <div style="font-size:10px;color:var(--muted);font-family:var(--head);letter-spacing:.06em;text-transform:uppercase;">True waste</div>
-      </div>
-      <div style="text-align:center;padding:10px;background:var(--bg);border-radius:2px;">
-        <div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--ink);">${efficiency}%</div>
-        <div style="font-size:10px;color:var(--muted);font-family:var(--head);letter-spacing:.06em;text-transform:uppercase;">Cut efficiency</div>
-      </div>
-    </div>
-    ${useRemnants && remAvailLen > 0 ? `<div style="background:#edf7f1;border:1px solid var(--green);border-radius:2px;padding:8px 12px;margin-bottom:10px;font-size:11px;color:var(--green2);">
-      ♻ <strong>${(remAvailLen/1000).toFixed(2)}m</strong> saved as reusable remnants → available for next simulation
-    </div>` : ''}`;
-
-  result.pipes.forEach(pipe => {
-    const usedMm = pipeLen - pipe.remaining;
-    const usedPct = Math.min(100, (usedMm / pipeLen) * 100);
-    const remPct  = Math.min(100, (pipe.remaining / pipeLen) * 100);
-    html += `
-      <div style="margin-bottom:10px;">
-        <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
-          <span style="font-family:var(--mono);font-size:11px;font-weight:700;color:var(--ink);">${pipe.id}</span>
-          <span style="font-size:10px;color:var(--muted);">waste: <strong style="color:${pipe.remaining > pipeLen*0.3 ? 'var(--rust)' : 'var(--muted)'};">${pipe.remaining.toLocaleString()}mm</strong></span>
-        </div>
-        <div style="height:16px;display:flex;border:1px solid var(--border);border-radius:2px;overflow:hidden;">
-          <div style="width:${usedPct}%;background:${useRemnants ? 'var(--green)' : 'var(--rust)'};height:100%;"></div>
-          <div style="width:${remPct}%;background:var(--gold);height:100%;opacity:.7;"></div>
-          <div style="flex:1;background:var(--bg2);height:100%;"></div>
-        </div>
-        <div style="font-size:9px;color:var(--muted);margin-top:2px;">${pipe.cuts.length} cut(s) · ${usedMm.toLocaleString()}mm used</div>
-      </div>`;
-  });
-
-  if (useRemnants && result.remnantPool && result.remnantPool.length) {
-    html += `<div style="font-family:var(--head);font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--gold2);margin-top:10px;margin-bottom:6px;">Remnants generated & available for reuse:</div>`;
-    result.remnantPool.forEach(r => {
-      const statusColor = r.consumed ? 'var(--muted)' : 'var(--gold2)';
-      html += `<div style="display:flex;justify-content:space-between;padding:4px 8px;background:var(--bg);border-left:3px solid ${r.consumed ? 'var(--border)' : 'var(--gold)'};margin-bottom:3px;font-size:11px;">
-        <span style="font-family:var(--mono);color:${statusColor};">${r.id}</span>
-        <span style="font-family:var(--mono);color:${statusColor};font-weight:700;">${r.remaining.toLocaleString()}mm ${r.consumed ? '(consumed)' : '(available)'}</span>
-      </div>`;
-    });
-  }
-
-  if (result.failed && result.failed.length) {
-    html += `<div style="background:#fdf0ec;border:1px solid var(--rust);padding:8px 10px;margin-top:10px;font-size:11px;color:var(--rust);">⚠ ${result.failed.length} cut(s) could not be fulfilled — not enough pipes.</div>`;
-  }
-
-  return html;
-}
-
-function buildPipeVisual(withoutR, withR, pipeLen) {
-  // Assign a unique bright colour to each remnant for connection tracing
-  const REM_COLORS = [
-    '#c8960a','#2980B9','#8E44AD','#16A085','#D35400','#1ABC9C','#E91E63','#00BCD4','#FF5722','#9C27B0'
-  ];
-  const remColorMap = {};
-  if (withR.remnantPool) {
-    withR.remnantPool.forEach((r, i) => { remColorMap[r.id] = REM_COLORS[i % REM_COLORS.length]; });
-  }
-
-  // Build legend - one entry per remnant that was actually used somewhere
-  const usedRems = (withR.remnantPool || []).filter(r => r.usedForCuts && r.usedForCuts.length > 0);
-  const legendItems = (withR.remnantPool || []).map((r, i) => {
-    const col = remColorMap[r.id];
-    return `<span style="display:inline-flex;align-items:center;gap:5px;margin-right:12px;">
-      <span style="width:12px;height:12px;background:${col};display:inline-block;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px ${col};"></span>
-      <span style="font-size:10px;font-family:var(--mono);color:var(--ink);">${r.id}</span>
-      <span style="font-size:9px;color:var(--muted);">${r.usedForCuts && r.usedForCuts.length ? '→ used in ' + r.usedForCuts.length + ' cut(s)' : '→ available'}</span>
-    </span>`;
-  }).join('');
-
-  let html = `
-    <div style="margin-bottom:12px;display:flex;gap:16px;font-size:11px;flex-wrap:wrap;align-items:center;">
-      <span style="display:flex;align-items:center;gap:5px;"><span style="width:14px;height:10px;background:var(--rust);display:inline-block;border-radius:2px;"></span> Cut (without)</span>
-      <span style="display:flex;align-items:center;gap:5px;"><span style="width:14px;height:10px;background:#1E8449;display:inline-block;border-radius:2px;"></span> Cut from full pipe</span>
-      <span style="display:flex;align-items:center;gap:5px;"><span style="width:12px;height:12px;border-radius:50%;background:#c8960a;display:inline-block;border:2px solid #fff;box-shadow:0 0 0 1px #c8960a;"></span> Cut from remnant (colour = REM ID)</span>
-      <span style="display:flex;align-items:center;gap:5px;"><span style="width:14px;height:10px;background:var(--gold);display:inline-block;border-radius:2px;opacity:.7;"></span> Remnant generated</span>
-      <span style="display:flex;align-items:center;gap:5px;"><span style="width:14px;height:10px;background:var(--bg3);display:inline-block;border-radius:2px;"></span> Wasted</span>
-    </div>`;
-
-  if (legendItems) {
-    html += `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:2px;padding:8px 12px;margin-bottom:14px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;">
-      <span style="font-family:var(--head);font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-right:8px;">Remnant colour key:</span>
-      ${legendItems}
-    </div>`;
-  }
-
-  html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">`;
-  html += `<div>
-    <div style="font-family:var(--head);font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#922B21;margin-bottom:10px;text-align:center;padding:6px;background:#fdf0ec;border-radius:2px;">✗ WITHOUT REMNANT REUSE</div>`;
-
-  // ── WITHOUT column ────────────────────────────────────────────────────────
-  const WO_COLORS = ['C0392B','A93226','E74C3C','CB4335','B03A2E','922B21','7B241C','641E16'];
-  withoutR.pipes.forEach((pipe, pi) => {
-    html += `<div style="margin-bottom:12px;">
-      <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:3px;font-weight:700;">${pipe.id} <span style="font-weight:400;">— ${pipeLen.toLocaleString()}mm full pipe</span></div>
-      <div style="height:30px;display:flex;border:1px solid var(--border);border-radius:2px;overflow:hidden;">`;
-    pipe.cuts.forEach((c, ci) => {
-      const pct = Math.max(0.5, (c.needed / pipeLen) * 100);
-      html += `<div title="${c.label}: ${c.len}mm + ${c.needed-c.len}mm allowance"
-        style="width:${pct}%;background:#${WO_COLORS[ci%WO_COLORS.length]};height:100%;border-right:1px solid rgba(255,255,255,.3);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;">
-        ${pct > 7 ? `<span style="font-size:8px;color:#fff;font-family:var(--mono);white-space:nowrap;">${c.len}</span>` : ''}
-      </div>`;
-    });
-    if (pipe.remaining > 0) {
-      const remPct = (pipe.remaining / pipeLen) * 100;
-      const bigWaste = pipe.remaining > pipeLen * 0.2;
-      html += `<div style="flex:1;background:${bigWaste ? '#922B21' : '#d5d8dc'};opacity:${bigWaste ? '0.45' : '0.9'};height:100%;display:flex;align-items:center;justify-content:center;">
-        <span style="font-size:8px;color:${bigWaste ? '#fff':'#666'};font-family:var(--mono);white-space:nowrap;">${pipe.remaining > 50 ? pipe.remaining.toLocaleString()+'mm WASTED' : ''}</span>
-      </div>`;
-    }
-    html += `</div>
-      <div style="font-size:9px;color:var(--muted);margin-top:2px;">${pipe.cuts.length} cut(s) · ${(pipeLen-pipe.remaining).toLocaleString()}mm used · <strong style="color:${pipe.remaining>500?'var(--rust)':'var(--muted)'};">${pipe.remaining.toLocaleString()}mm discarded</strong></div>
-    </div>`;
-  });
-
-  html += `</div><div>
-    <div style="font-family:var(--head);font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--green);margin-bottom:10px;text-align:center;padding:6px;background:#edf7f1;border-radius:2px;">✓ WITH REMNANT REUSE</div>`;
-
-  // ── WITH column ───────────────────────────────────────────────────────────
-  withR.pipes.forEach((pipe, pi) => {
-    const remFromThisPipe = (withR.remnantPool || []).filter(r => r.fromPipe === pipe.id);
-
-    html += `<div style="margin-bottom:4px;">
-      <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:3px;font-weight:700;">${pipe.id} <span style="font-weight:400;">— ${pipeLen.toLocaleString()}mm full pipe</span></div>
-      <div style="height:30px;display:flex;border:1px solid var(--border);border-radius:2px;overflow:hidden;">`;
-
-    pipe.cuts.forEach((c, ci) => {
-      const pct = Math.max(0.5, (c.needed / pipeLen) * 100);
-      html += `<div title="${c.label}: ${c.len}mm + ${c.needed-c.len}mm allowance — cut from full pipe"
-        style="width:${pct}%;background:#1E8449;height:100%;border-right:1px solid rgba(255,255,255,.3);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;">
-        ${pct > 7 ? `<span style="font-size:8px;color:#fff;font-family:var(--mono);white-space:nowrap;">${c.len}</span>` : ''}
-      </div>`;
-    });
-
-    if (pipe.remaining > 0) {
-      const hasRem = remFromThisPipe.length > 0;
-      const remCol = hasRem ? remColorMap[remFromThisPipe[0].id] || 'var(--gold)' : '#d5d8dc';
-      const remTxt = remFromThisPipe.length > 0 ? remFromThisPipe[0].id + ' ' + pipe.remaining.toLocaleString() + 'mm' : pipe.remaining.toLocaleString() + 'mm';
-      html += `<div style="flex:1;background:${remCol};opacity:.75;height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden;">
-        ${pipe.remaining > 80 ? `<span style="font-size:8px;color:#fff;font-family:var(--mono);white-space:nowrap;font-weight:700;">${remTxt}</span>` : ''}
-      </div>`;
-    }
-    html += `</div>`;
-
-    // Show generated remnants from this pipe with usage detail
-    remFromThisPipe.forEach(rem => {
-      const col = remColorMap[rem.id];
-      const wasUsed = rem.usedForCuts && rem.usedForCuts.length > 0;
-      html += `<div style="margin-top:3px;border-left:3px solid ${col};background:${col}18;padding:4px 8px 4px 6px;border-radius:0 2px 2px 0;">
-        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-          <span style="width:10px;height:10px;border-radius:50%;background:${col};display:inline-block;border:1.5px solid #fff;box-shadow:0 0 0 1px ${col};flex-shrink:0;"></span>
-          <span style="font-family:var(--mono);font-size:10px;font-weight:700;color:${col};">${rem.id}</span>
-          <span style="font-size:9px;color:var(--muted);">generated: ${(rem.remaining + (rem.usedForCuts||[]).reduce((a,c)=>a+c.needed,0)).toLocaleString()}mm</span>
-          ${wasUsed
-            ? `<span style="font-size:9px;color:var(--green);font-weight:700;">→ used for: ${rem.usedForCuts.map(c=>'<strong style="color:var(--ink);">'+c.label+' ('+c.len+'mm)</strong>').join(', ')}</span>`
-            : `<span style="font-size:9px;color:var(--gold2);">→ ${rem.remaining.toLocaleString()}mm available next simulation</span>`
-          }
-        </div>
-      </div>`;
-    });
-
-    const info = `${pipe.cuts.length} cut(s) · ${(pipeLen-pipe.remaining).toLocaleString()}mm used`;
-    html += `<div style="font-size:9px;color:var(--muted);margin-top:3px;margin-bottom:8px;">${info}</div>`;
-  });
-
-  // Remnant-as-source rows — show cuts that came FROM remnants
-  const remCuts = (withR.remnantPool || []).filter(r => r.usedForCuts && r.usedForCuts.length > 0);
-  if (remCuts.length > 0) {
-    html += `<div style="margin-top:8px;border-top:2px dashed var(--border);padding-top:10px;">
-      <div style="font-family:var(--head);font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;">Cuts allocated FROM remnants:</div>`;
-    remCuts.forEach(rem => {
-      const col = remColorMap[rem.id];
-      const totalCutFromRem = rem.usedForCuts.reduce((a,c)=>a+c.needed,0);
-      const origLen = rem.remaining + totalCutFromRem;
-      html += `<div style="background:#fff;border:1.5px solid ${col};border-radius:2px;margin-bottom:8px;overflow:hidden;">
-        <div style="background:${col};padding:5px 10px;display:flex;align-items:center;gap:8px;">
-          <span style="width:10px;height:10px;border-radius:50%;background:#fff;display:inline-block;"></span>
-          <span style="font-family:var(--mono);font-size:11px;font-weight:700;color:#fff;">${rem.id}</span>
-          <span style="font-size:10px;color:rgba(255,255,255,.8);">from ${rem.fromPipe} · original: ${origLen.toLocaleString()}mm</span>
-        </div>
-        <div style="padding:6px 10px;">
-          <div style="height:20px;display:flex;border:1px solid ${col}44;border-radius:2px;overflow:hidden;margin-bottom:6px;">
-            ${rem.usedForCuts.map((c,ci) => {
-              const pct = Math.max(1,(c.needed/origLen)*100);
-              return `<div title="${c.label}: ${c.len}mm + ${c.needed-c.len}mm allow"
-                style="width:${pct}%;background:${col};opacity:${0.9-ci*0.1};height:100%;border-right:1px solid rgba(255,255,255,.4);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;">
-                ${pct>8?`<span style="font-size:7px;color:#fff;font-family:var(--mono);">${c.len}</span>`:''}
-              </div>`;
-            }).join('')}
-            ${rem.remaining>0?`<div style="flex:1;background:${col}22;height:100%;display:flex;align-items:center;justify-content:center;">
-              <span style="font-size:7px;color:${col};font-family:var(--mono);font-weight:700;">${rem.remaining>30?rem.remaining+'mm left':''}</span>
-            </div>`:''}
-          </div>
-          ${rem.usedForCuts.map((c,ci) => `
-            <div style="display:flex;align-items:center;gap:6px;font-size:10px;margin-bottom:2px;">
-              <span style="font-family:var(--mono);color:${col};font-weight:700;">cut ${ci+1}:</span>
-              <span style="color:var(--ink);">${c.label}</span>
-              <span style="color:var(--muted);">→ ${c.len.toLocaleString()}mm + ${c.needed-c.len}mm allow = <strong>${c.needed.toLocaleString()}mm</strong></span>
-            </div>`).join('')}
-          <div style="font-size:9px;color:var(--muted);margin-top:4px;border-top:1px solid ${col}22;padding-top:4px;">
-            Remaining on this remnant: <strong style="color:${rem.consumed?'var(--muted)':col};">${rem.remaining.toLocaleString()}mm ${rem.consumed?'(fully consumed)':'(still available)'}</strong>
-          </div>
-        </div>
-      </div>`;
-    });
-    html += `</div>`;
-  }
-
-  // Saved pipes (empty slots)
-  for (let i = withR.pipes.length; i < withoutR.pipes.length; i++) {
-    html += `<div style="margin-bottom:10px;">
-      <div style="font-family:var(--mono);font-size:10px;color:var(--green);margin-bottom:3px;font-weight:700;">PIPE-${String(i+1).padStart(2,'0')} — NOT NEEDED ✓</div>
-      <div style="height:30px;border:2px dashed var(--green);border-radius:2px;background:#edf7f1;display:flex;align-items:center;justify-content:center;">
-        <span style="font-size:10px;color:var(--green);font-family:var(--head);font-weight:700;letter-spacing:.06em;text-transform:uppercase;">Saved by remnant reuse</span>
-      </div>
-    </div>`;
-  }
-
-  html += `</div></div>`;
-  return html;
-}
-
-function buildSavingsPanel(withoutR, withR, pipeLen, allCuts, allowance, pipesSaved, matSaved, pctSaved) {
-  const totalCuts   = allCuts.length;
-  const totalReqLen = allCuts.reduce((a,c) => a + c.len, 0);
-  const maxCut      = Math.max(...allCuts.map(c => c.len));
-
-  // WITHOUT: all leftover is permanently wasted
-  const withoutWaste = withoutR.pipes.reduce((a,p) => a + p.remaining, 0);
-
-  // WITH: split remainder into reusable remnants vs true waste
-  const withRemAvail  = withR.remnantPool
-    ? withR.remnantPool.filter(r => !r.consumed).reduce((a,r) => a + r.remaining, 0)
-    : 0;
-  const withTrueWaste = Math.max(0, withR.pipes.reduce((a,p) => a + p.remaining, 0) - withRemAvail);
-
-  const sameCount = pipesSaved === 0;
-
-  const metricRows = [
-    { label: 'Pipes consumed — WITHOUT', val: String(withoutR.pipes.length), col: '#e07070' },
-    { label: 'Pipes consumed — WITH', val: String(withR.pipes.length), col: '#2ec27e' },
-    { label: 'Discarded forever — WITHOUT', val: (withoutWaste/1000).toFixed(2) + ' m', col: '#e07070' },
-    { label: 'Discarded forever — WITH', val: (withTrueWaste/1000).toFixed(2) + ' m', col: '#2ec27e' },
-    { label: 'Saved as reusable remnants', val: (withRemAvail/1000).toFixed(2) + ' m', col: '#c8960a' },
-    { label: 'Total cuts in this scenario', val: String(totalCuts), col: 'rgba(255,255,255,.5)' },
-  ];
-
-  const pipeLabel  = sameCount
-    ? 'Both approaches use ' + withoutR.pipes.length + ' pipes. The largest cut (' + maxCut.toLocaleString() + 'mm + ' + allowance + 'mm allowance = ' + (maxCut+allowance).toLocaleString() + 'mm) exceeds any available remnant and forces a fresh pipe regardless of tracking.'
-    : 'Remnant reuse saved ' + pipesSaved + ' full pipe(s) — ' + (pipesSaved*pipeLen/1000).toFixed(1) + 'm of stock preserved.';
-
-  const icon = sameCount ? 'ℹ️' : '✅';
-
-  const html =
-    '<div style="background:var(--ink);border-radius:2px;overflow:hidden;margin-bottom:16px;">' +
-    '<div style="background:var(--gold);padding:12px 18px;"><div style="font-family:var(--head);font-size:16px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#fff;">💰 Summary — what remnant tracking actually saves</div></div>' +
-    '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:rgba(255,255,255,.1);">' +
-    metricRows.map(function(m) {
-      return '<div style="padding:16px 18px;background:rgba(255,255,255,.04);">' +
-        '<div style="font-family:var(--head);font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.4);margin-bottom:6px;">' + m.label + '</div>' +
-        '<div style="font-family:var(--mono);font-size:22px;font-weight:700;color:' + m.col + ';">' + m.val + '</div>' +
-        '</div>';
-    }).join('') +
-    '</div>' +
-    '<div style="padding:16px 18px;background:rgba(255,255,255,.06);border-top:1px solid rgba(255,255,255,.08);">' +
-    '<div style="font-family:var(--head);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);margin-bottom:10px;">📊 Key insight for this scenario</div>' +
-    '<div style="font-size:12px;color:rgba(255,255,255,.7);line-height:1.8;margin-bottom:12px;">' + icon + ' ' + pipeLabel + '</div>' +
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">' +
-    '<div style="background:rgba(220,50,50,.12);border:1px solid rgba(220,50,50,.3);border-radius:2px;padding:12px 14px;">' +
-    '<div style="font-family:var(--head);font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#e07070;margin-bottom:8px;">✗ WITHOUT remnant tracking</div>' +
-    '<div style="font-size:12px;color:rgba(255,255,255,.65);line-height:1.8;">' +
-    '• <strong style="color:#e07070;">' + (withoutWaste/1000).toFixed(2) + 'm</strong> of pipe cut off and discarded<br>' +
-    '• No record kept — cannot be recovered<br>' +
-    '• Same waste repeats every simulation<br>' +
-    '• Accumulates over hundreds of spools' +
-    '</div></div>' +
-    '<div style="background:rgba(30,132,73,.12);border:1px solid rgba(30,132,73,.3);border-radius:2px;padding:12px 14px;">' +
-    '<div style="font-family:var(--head);font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#2ec27e;margin-bottom:8px;">✓ WITH remnant tracking</div>' +
-    '<div style="font-size:12px;color:rgba(255,255,255,.65);line-height:1.8;">' +
-    '• Only <strong style="color:#2ec27e;">' + (withTrueWaste/1000).toFixed(2) + 'm</strong> truly discarded (tiny off-cuts)<br>' +
-    '• <strong style="color:#c8960a;">' + (withRemAvail/1000).toFixed(2) + 'm</strong> logged as remnants (REM-001 etc.)<br>' +
-    '• Reused FIRST in next simulation automatically<br>' +
-    '• Savings compound across every project' +
-    '</div></div>' +
-    '</div></div>' +
-    '<div style="padding:10px 18px;font-size:10px;color:rgba(255,255,255,.25);font-style:italic;border-top:1px solid rgba(255,255,255,.06);">' +
-    '* Self-contained demo — does not affect your database. Each cut includes ' + allowance + 'mm cutting allowance.' +
-    '</div></div>';
-
-  return html;
-}
-
-async function loadProjects_page() {
-  // Also refresh the dropdown
-  await loadProjects();
-  renderProjectsPage();
-}
-
-async function renderProjectsPage() {
-  try {
-    const projs = await api('GET', '/api/projects');
-    const body = document.getElementById('pj-body');
-    const empty = document.getElementById('pj-empty');
-    if (!projs.length) { body.innerHTML = ''; empty.style.display = 'block'; return; }
-    empty.style.display = 'none';
-    body.innerHTML = projs.map(pj => `<tr style="${!pj.active ? 'opacity:0.55;' : ''}">
-      <td><span class="mono" style="font-weight:700;color:var(--rust);">${pj.code}</span></td>
-      <td>${pj.name}</td>
-      <td style="font-size:11px;">${pj.location || '—'}</td>
-      <td style="font-size:11px;">${pj.client || '—'}</td>
-      <td><span class="mono" style="font-size:10px;color:var(--muted);">${pj.code}-CP-${new Date().getFullYear()}-0001</span></td>
-      <td><span class="mono" style="font-size:10px;color:var(--muted);">${pj.code}-REM-000001</span></td>
-      <td><span class="badge ${pj.active ? 'b-gn' : 'b-mt'}">${pj.active ? 'Active' : 'Inactive'}</span></td>
-      <td><div style="display:flex;gap:4px;">
-        <button class="btn btn-s btn-sm" onclick="openProjectEdit(${pj.id},'${pj.code}','${pj.name.replace(/'/g,"\\'")}','${pj.location || ''}','${pj.client || ''}',${pj.active})">Edit</button>
-        ${pj.code !== 'DEFAULT' ? `<button class="btn btn-o btn-sm" onclick="deleteProject(${pj.id},'${pj.code}')">Delete</button>` : '<span style="font-size:10px;color:var(--muted);">Default</span>'}
-      </div></td>
-    </tr>`).join('');
-  } catch(e) { console.error('renderProjectsPage:', e); }
-}
-
-async function addProject() {
-  const code   = v('pj-code').toUpperCase().trim().replace(/[^A-Z0-9\-]/g,'').slice(0,12);
-  const name   = v('pj-name').trim();
-  const loc    = v('pj-loc').trim();
-  const client = v('pj-client').trim();
-  if (!code || !name) { flash('pj-err','Project code and name are required.','err'); return; }
-  if (code.length < 2) { flash('pj-err','Project code must be at least 2 characters.','err'); return; }
-  try {
-    const r = await api('POST', '/api/projects', { code, name, location: loc, client });
-    flash('pj-ok', `Project "${r.code}" created. Cutting plans will be numbered: ${r.code}-CP-${new Date().getFullYear()}-0001`, 'ok');
-    clearProject();
-    await loadProjects();
-    renderProjectsPage();
-  } catch(e) { flash('pj-err', e.message, 'err'); }
-}
-
-function clearProject() {
-  ['pj-code','pj-name','pj-loc','pj-client'].forEach(id => sv(id, ''));
-  flash('pj-ok','','ok'); flash('pj-err','','err');
-}
-
-function openProjectEdit(id, code, name, loc, client, active) {
-  sv('pje-id', id);
-  document.getElementById('pje-code-display').textContent = code;
-  sv('pje-name', name); sv('pje-loc', loc); sv('pje-client', client);
-  sv('pje-active', active ? '1' : '0');
-  flash('pje-ok','','ok'); flash('pje-err','','err');
-  document.getElementById('pj-edit-modal').classList.add('open');
-}
-
-async function saveProjectEdit() {
-  const id = v('pje-id');
-  const body = { name: v('pje-name').trim(), location: v('pje-loc').trim(), client: v('pje-client').trim(), active: v('pje-active') === '1' };
-  if (!body.name) { flash('pje-err','Project name is required.','err'); return; }
-  try {
-    await api('PUT', `/api/projects/${id}`, body);
-    flash('pje-ok','Project updated successfully.','ok');
-    await loadProjects();
-    renderProjectsPage();
-    setTimeout(() => closeModal('pj-edit-modal'), 1200);
-  } catch(e) { flash('pje-err', e.message, 'err'); }
-}
-
-async function deleteProject(id, code) {
-  if (!confirm(`Delete project "${code}"?\n\nThis will only work if the project has no pipe stock or cutting plans linked to it. Otherwise, deactivate it instead.`)) return;
-  try {
-    await api('DELETE', `/api/projects/${id}`);
-    flash('pj-ok', `Project ${code} deleted.`, 'ok');
-    await loadProjects();
-    renderProjectsPage();
-  } catch(e) { flash('pj-err', e.message, 'err'); }
-}
-
-// ═══════════════════════════════════════════════════════════
-// UNDO CUTTING PLAN
-// ═══════════════════════════════════════════════════════════
 async function openUndoModal(id, planNo) {
   document.getElementById('undo-modal-title').textContent = `↩ Undo Cutting Plan: ${planNo}`;
   document.getElementById('undo-modal-body').innerHTML = '<div style="text-align:center;padding:24px;color:var(--muted);font-size:13px;">Loading preview...</div>';

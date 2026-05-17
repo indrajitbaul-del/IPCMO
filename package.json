@@ -1,6 +1,6 @@
 {
   "name": "ipcmo",
-  "version": "1.0.0",
+  "version": "2.5.0",
   "description": "Integrated Pipe Cutting Management & Optimizer",
   "main": "src/server.js",
   "engines": {
