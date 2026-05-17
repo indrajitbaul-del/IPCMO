@@ -309,7 +309,7 @@ tbody tr:last-child td{border-bottom:none;}
     <button class="s-item" onclick="go('projects',this)" id="nav-projects"><svg fill="currentColor" viewBox="0 0 24 24"><path d="M20 6h-2.18c.07-.44.18-.88.18-1.35C18 2.53 15.48 1 13 1c-1.32 0-2.6.5-3.54 1.41L8 3.83l-1.46-1.42C5.6 1.5 4.32 1 3 1 .52 1-2 2.53-2 4.65c0 .47.11.91.18 1.35H-2v14h22V6zm-9.58 0l1.45-1.42C12.68 3.94 12.37 3 13 3c1.48 0 3 1.53 3 3.65c0 .47-.11.91-.18 1.35H8.57l1.85-2z"/></svg><span>Projects</span></button>
     <button class="s-item" onclick="go('users',this)" id="nav-users"><svg fill="currentColor" viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg><span>User Management</span></button>
   </nav>
-  <div class="s-footer"><p>IPCMO v2.5 · Optimised · Secure</p></div>
+  <div class="s-footer"><p>IPCMO v2.4 · Optimised · Secure</p></div>
 </aside>
 <!-- MAIN -->
 <div class="main">
@@ -439,12 +439,26 @@ tbody tr:last-child td{border-bottom:none;}
           <div class="card-head"><span class="card-head-title">Add pipe item code</span></div>
           <div class="card-body">
             <div class="fg c3">
-              <div class="field"><label>Item Code *</label><input id="pm-code" placeholder="e.g. CS-4IN-SCH40" onblur="autoPopulateFromCode()" onchange="autoPopulateFromCode()"></div>
+              <div class="field"><label>Item Code *</label><input id="pm-code" placeholder="e.g. CS-4IN-SCH40 (optional — auto-generated if blank)"></div>
               <div class="field"><label>Description *</label><input id="pm-desc" placeholder='e.g. CS Pipe 4" Sch40' onblur="autoPopulateFromDesc()" oninput="scheduleDescParse()"></div>
               <div class="field"><label>Material *</label><select id="pm-mat">
-                <option>Carbon Steel</option><option>Stainless Steel 316L</option><option>Stainless Steel 304</option>
-                <option>Duplex 2205</option><option>Alloy Steel P11</option><option>HDPE</option>
-                <option>GRE/GRP</option><option>Copper-Nickel 90/10</option><option>PVC</option><option>Other</option>
+                <option value="">— Select material —</option>
+                <option>Carbon Steel</option>
+                <option>Low Temp Carbon Steel</option>
+                <option>Stainless Steel 316/316L</option>
+                <option>Stainless Steel 316L</option>
+                <option>Stainless Steel 304</option>
+                <option>Super Duplex SS</option>
+                <option>Duplex SS</option>
+                <option>Duplex 2205</option>
+                <option>Alloy Steel P11</option>
+                <option>Nickel Alloy</option>
+                <option>Copper-Nickel 90/10</option>
+                <option>HDPE</option>
+                <option>GRE/FRP</option>
+                <option>GRE/GRP</option>
+                <option>PVC</option>
+                <option>Other</option>
               </select></div>
             </div>
             <div class="fg c4">
@@ -1098,6 +1112,10 @@ tbody tr:last-child td{border-bottom:none;}
 </nav>
 
 <script>
+// ── DOM helpers (v = getValue, sv = setValue) ────────────────────────────────
+const v  = (id) => { const el = document.getElementById(id); if (!el) return ''; return (el.value ?? '').trim(); };
+const sv = (id, val) => { const el = document.getElementById(id); if (!el) return; el.value = (val === null || val === undefined) ? '' : val; };
+// ─────────────────────────────────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════════════════════
@@ -1723,13 +1741,37 @@ async function backfillODWT() {
 }
 
 async function addPipeMaster() {
-  const body = { item_code:v('pm-code').toUpperCase(), description:v('pm-desc'), material:v('pm-mat'), size_nominal:v('pm-size'), size_od_mm:v('pm-od'), wall_thickness_mm:v('pm-wt'), schedule:v('pm-sch'), standard:v('pm-std'), cutting_allowance_mm:v('pm-ca')||5, project_id:currentProject };
-  try { await api('POST','/api/pipe-master',body); flash('pm-ok','Item code added.','ok'); clearPM(); loadPipeMaster(); }
+  // Auto-generate item_code from material + size + schedule if user left it blank
+  let itemCode = v('pm-code').toUpperCase();
+  if (!itemCode) {
+    const mat = v('pm-mat') || '';
+    const sz  = v('pm-size') || '';
+    const sch = v('pm-sch') || '';
+    const matCode = mat.includes('Carbon') ? 'CS'
+                  : mat.includes('316') ? 'SS316' : mat.includes('304') ? 'SS304'
+                  : mat.includes('Super Duplex') ? 'SDSS' : mat.includes('Duplex') ? 'DSS'
+                  : mat.includes('LTCS') || mat.includes('Low Temp') ? 'LTCS'
+                  : mat.includes('HDPE') ? 'HDPE' : mat.includes('GRE') ? 'GRE'
+                  : mat.includes('Copper') ? 'CUNI' : mat.includes('Nickel') ? 'NI'
+                  : 'PIPE';
+    const szCode  = sz.replace(/["\/]/g, '').replace(/\./g, '_').replace(/\s+/g, '');
+    const schCode = sch.replace(/\s+/g, '').toUpperCase();
+    itemCode = [matCode, szCode, schCode].filter(Boolean).join('-') || 'PIPE-' + Date.now();
+    sv('pm-code', itemCode);
+  }
+  if (!v('pm-desc'))      { flash('pm-err', 'Description is required.', 'err'); return; }
+  if (!v('pm-mat'))       { flash('pm-err', 'Material is required.', 'err'); return; }
+  if (!v('pm-size'))      { flash('pm-err', 'Nominal size is required.', 'err'); return; }
+  const body = { item_code: itemCode, description:v('pm-desc'), material:v('pm-mat'), size_nominal:v('pm-size'), size_od_mm:v('pm-od'), wall_thickness_mm:v('pm-wt'), schedule:v('pm-sch'), standard:v('pm-std'), cutting_allowance_mm:v('pm-ca')||5, project_id:currentProject };
+  try { await api('POST','/api/pipe-master',body); flash('pm-ok',`Item code "${itemCode}" added.`,'ok'); clearPM(); loadPipeMaster(); }
   catch(e) { flash('pm-err',e.message,'err'); }
 }
-function clearPM() { ['pm-code','pm-desc','pm-od','pm-wt','pm-std'].forEach(id=>sv(id,'')); sv('pm-ca',5); sv('pm-size',''); sv('pm-sch',''); }
+function clearPM() { ['pm-code','pm-desc','pm-od','pm-wt','pm-std'].forEach(id=>sv(id,'')); sv('pm-ca',5); sv('pm-size',''); sv('pm-sch',''); sv('pm-mat',''); document.querySelectorAll('#pm-sch option[data-dynamic]').forEach(o=>o.remove()); }
 
+// Item-code parse is now only a fallback — description is authoritative
 async function autoPopulateFromCode() {
+  // Only fills fields if description hasn't already populated them
+  if (v('pm-desc').length >= 3) return; // description takes priority
   const code = v('pm-code').trim();
   if (!code || code.length < 3) return;
   try {
@@ -1741,15 +1783,15 @@ async function autoPopulateFromCode() {
     if (!v('pm-std')  && parsed.standard)     sv('pm-std',  parsed.standard);
     if (!v('pm-ca')   && parsed.cutting_allowance_mm) sv('pm-ca', parsed.cutting_allowance_mm);
     if (parsed.size_nominal || parsed.schedule) onPMSizeOrSchChange();
-  } catch(e) { /* silent fail */ }
+  } catch(e) { console.warn('parse-code error:', e.message); }
 }
 
-// Auto-populate material, size, schedule, standard from DESCRIPTION text
-// Triggered on blur (instant) and debounced on input (after 600ms pause)
+// Auto-populate ALL fields from DESCRIPTION text — description is the authoritative source
+// Triggered on blur (instant) and debounced on input (after 500ms pause)
 let _descParseTimer = null;
 function scheduleDescParse() {
   clearTimeout(_descParseTimer);
-  _descParseTimer = setTimeout(autoPopulateFromDesc, 600);
+  _descParseTimer = setTimeout(autoPopulateFromDesc, 500);
 }
 
 async function autoPopulateFromDesc() {
@@ -1758,16 +1800,32 @@ async function autoPopulateFromDesc() {
   try {
     const parsed = await api('GET', `/api/pipe-master/parse-desc?desc=${encodeURIComponent(desc)}`);
     if (!parsed) return;
-    let changed = false;
-    // Only fill fields the user has NOT already filled
-    if (!v('pm-mat') && parsed.material)    { sv('pm-mat', parsed.material); changed = true; }
-    if (!v('pm-size') && parsed.size_nominal){ sv('pm-size', parsed.size_nominal); changed = true; }
-    if (!v('pm-sch')  && parsed.schedule)   { sv('pm-sch',  parsed.schedule);  changed = true; }
-    if (!v('pm-std')  && parsed.standard)   { sv('pm-std',  parsed.standard);  changed = true; }
-    if (!v('pm-ca')   && parsed.cutting_allowance_mm) sv('pm-ca', parsed.cutting_allowance_mm);
-    // Trigger ASME OD/wall thickness lookup if size or schedule was just populated
-    if (changed && (parsed.size_nominal || parsed.schedule)) onPMSizeOrSchChange();
-  } catch(e) { /* silent fail */ }
+
+    // ALWAYS overwrite from description — description is authoritative
+    if (parsed.material)         sv('pm-mat',  parsed.material);
+    if (parsed.size_nominal)     sv('pm-size', parsed.size_nominal);
+    if (parsed.schedule) {
+      const schSel = document.getElementById('pm-sch');
+      // If parsed schedule (e.g. '31.75mm') is not in dropdown, add it as a dynamic option
+      if (schSel && !Array.from(schSel.options).some(o => o.value === parsed.schedule)) {
+        const dynOpt = document.createElement('option');
+        dynOpt.value = dynOpt.textContent = parsed.schedule;
+        dynOpt.setAttribute('data-dynamic', '1');
+        schSel.appendChild(dynOpt);
+      }
+      sv('pm-sch', parsed.schedule);
+    }
+    if (parsed.standard)         sv('pm-std',  parsed.standard);
+    if (parsed.cutting_allowance_mm) sv('pm-ca', parsed.cutting_allowance_mm);
+
+    // Use OD and WT directly from API response (server has the authoritative ASME table)
+    if (parsed.od)  sv('pm-od', parsed.od);
+    if (parsed.wt)  sv('pm-wt', parsed.wt);
+
+    // If API gave us size/schedule but not OD/WT (non-standard sizes), fallback to client PIPE_DIMS
+    if (parsed.size_nominal && !parsed.od) onPMSizeOrSchChange();
+
+  } catch(e) { console.warn('parse-desc error:', e.message); }
 }
 async function deletePM(code) {
   if(!confirm(`Delete item code "${code}"?\n\nWARNING: This will remove the item code. Any pipe stock or spools using this code will lose their reference.`)) return;

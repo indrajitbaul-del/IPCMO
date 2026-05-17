@@ -337,6 +337,8 @@ function parseDescription(desc) {
   let wall_thickness_mm = null;
   const wtMatch = u.match(/([\d]+\.?[\d]*)\s*MM\s*WT\b/);
   if (wtMatch) wall_thickness_mm = parseFloat(wtMatch[1]);
+  // If no named schedule found but WT is in description, use WT as schedule label (e.g. "31.75mm")
+  if (!schedule && wall_thickness_mm) schedule = wall_thickness_mm + 'mm';
 
   // ── OD from ASME table ────────────────────────────────────────────────────
   const PIPE_DIMS = {
@@ -382,12 +384,32 @@ router.get('/pipe-master/parse-desc', (req, res) => {
 });
 
 router.post('/pipe-master', requireRole('admin', 'engineer'), (req, res) => {
-  const { item_code, description, material, size_nominal, size_od_mm, wall_thickness_mm, schedule, standard, cutting_allowance_mm, project_id } = req.body;
-  if (!item_code || !description || !material || !size_nominal)
-    return res.status(400).json({ error: 'Missing required fields' });
+  let { item_code, description, material, size_nominal, size_od_mm, wall_thickness_mm, schedule, standard, cutting_allowance_mm, project_id } = req.body;
+  if (!description || !material || !size_nominal)
+    return res.status(400).json({ error: 'Description, material and nominal size are required' });
+  // Auto-generate item_code from material + size + schedule if not provided
+  if (!item_code || !item_code.trim()) {
+    const matCode = material.includes('Carbon') ? 'CS'
+                  : material.includes('316') ? 'SS316' : material.includes('304') ? 'SS304'
+                  : material.includes('Super Duplex') ? 'SDSS' : material.includes('Duplex') ? 'DSS'
+                  : material.includes('Low Temp') ? 'LTCS'
+                  : material.includes('HDPE') ? 'HDPE' : material.includes('GRE') ? 'GRE'
+                  : material.includes('Copper') ? 'CUNI' : material.includes('Nickel') ? 'NI'
+                  : 'PIPE';
+    const szCode  = (size_nominal || '').replace(/["\/]/g,'').replace(/[.]/g,'_').replace(/\s+/g,'');
+    const schCode = (schedule || '').replace(/\s+/g,'').toUpperCase();
+    const base    = [matCode, szCode, schCode].filter(Boolean).join('-');
+    // Ensure uniqueness — append counter if already exists
+    let candidate = base, n = 1;
+    while (p('SELECT item_code FROM pipe_master WHERE item_code=?').get(candidate.toUpperCase())) {
+      candidate = base + '-' + String(n++).padStart(2,'0');
+    }
+    item_code = candidate.toUpperCase();
+  }
+  item_code = item_code.toUpperCase();
   try {
     const r = p('INSERT INTO pipe_master (item_code,description,material,size_nominal,size_od_mm,wall_thickness_mm,schedule,standard,cutting_allowance_mm,project_id,created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
-      .run(item_code.toUpperCase(), description, material, size_nominal, size_od_mm || null, wall_thickness_mm || null, schedule || null, standard || null, cutting_allowance_mm || 5, project_id || null, req.session.user.id);
+      .run(item_code, description, material, size_nominal, size_od_mm || null, wall_thickness_mm || null, schedule || null, standard || null, cutting_allowance_mm || 5, project_id || null, req.session.user.id);
     auditLog(db(), req.session.user.id, 'CREATE', 'pipe_master', item_code, req.body, req.ip);
     res.json({ id: r.lastInsertRowid, item_code });
   } catch (e) { res.status(400).json({ error: 'Item code already exists: ' + e.message }); }

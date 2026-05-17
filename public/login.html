@@ -53,7 +53,7 @@ html,body{height:100%;font-family:var(--body);background:var(--ink);overflow:hid
 .stat-label{font-family:var(--mono);font-size:9px;color:var(--muted2);letter-spacing:.1em;text-transform:uppercase;margin-top:5px;}
 
 /* ── RIGHT PANEL ── */
-.right{display:flex;flex-direction:column;justify-content:center;padding:60px 56px;background:rgba(22,28,40,.85);backdrop-filter:blur(24px);border-left:1px solid var(--border);animation:slideIn .5s .15s both ease-out;}
+.right{display:flex;flex-direction:column;justify-content:center;padding:60px 56px;background:rgba(22,28,40,.85);backdrop-filter:blur(24px);border-left:1px solid var(--border);animation:slideIn .5s .15s both ease-out;overflow-y:auto;}
 @keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:none}}
 @keyframes slideIn{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:none}}
 
@@ -118,7 +118,7 @@ html,body{height:100%;font-family:var(--body);background:var(--ink);overflow:hid
 @media(max-width:860px){
   .shell{grid-template-columns:1fr;}
   .left{display:none;}
-  .right{min-height:100vh;border-left:none;padding:40px 32px;background:rgba(22,28,40,.96);justify-content:center;}
+  .right{min-height:100vh;border-left:none;padding:40px 32px;background:rgba(22,28,40,.96);justify-content:center;overflow-y:auto;}
 }
 @media(max-width:400px){.right{padding:32px 20px;}.form-heading{font-size:22px;}}
 </style>
@@ -247,7 +247,7 @@ html,body{height:100%;font-family:var(--body);background:var(--ink);overflow:hid
 
 
     <!-- ── FORCED PASSWORD CHANGE PANEL (hidden until needed) ── -->
-    <div id="force-pw-panel" style="display:none;margin-top:18px;padding:16px;background:rgba(224,123,58,.08);border:1px solid rgba(224,123,58,.35);border-radius:8px;">
+    <div id="force-pw-panel" style="display:none;margin-top:18px;padding:16px 16px 20px;background:rgba(224,123,58,.08);border:1px solid rgba(224,123,58,.35);border-radius:8px;">
       <div style="font-family:var(--mono);font-size:11px;color:#e07b3a;font-weight:700;margin-bottom:10px;display:flex;align-items:center;gap:6px;">
         <svg fill="currentColor" viewBox="0 0 24 24" style="width:14px;height:14px;"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
         Password change required
@@ -361,6 +361,10 @@ async function login() {
         // Show force-change panel — do NOT redirect yet
         _loginCurrentPass = p;
         document.getElementById('force-pw-panel').style.display = 'block';
+        setTimeout(() => {
+          const btn = document.getElementById('fp-btn');
+          if (btn) btn.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }, 50);
         document.getElementById('btn').disabled = true;
         document.getElementById('u').disabled = true;
         document.getElementById('p').disabled = true;
