@@ -2873,6 +2873,424 @@ async function runAdnocScrapCheck() {
 document.querySelectorAll('.modal-bg').forEach(m => m.addEventListener('click', e => { if(e.target===m) m.classList.remove('open'); }));
 
 init();
+
+// ═══════════════════════════════════════════════════════════
+// MISSING FUNCTIONS — previously undefined, now implemented
+// ═══════════════════════════════════════════════════════════
+
+// ── Modal close ───────────────────────────────────────────
+function closeModal(id) {
+  const el = document.getElementById(id);
+  if (el) el.style.display = 'none';
+}
+function openModal(id) {
+  const el = document.getElementById(id);
+  if (el) el.style.display = 'flex';
+}
+
+// ── Item code selects — populate ps-code and spool part rows from pipeMasters ──
+function updateItemCodeSelects() {
+  // Pipe Stock add form
+  const psSel = document.getElementById('ps-code');
+  if (psSel) {
+    const cur = psSel.value;
+    psSel.innerHTML = '<option value="">— select —</option>' +
+      pipeMasters.map(m => `<option value="${m.item_code}"${m.item_code===cur?' selected':''}>${m.item_code} — ${m.description||''}</option>`).join('');
+  }
+  // Spool part rows (re-render selects using existing partRowsData)
+  document.querySelectorAll('select.part-item-code').forEach(sel => {
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">— select —</option>' +
+      pipeMasters.map(m => `<option value="${m.item_code}"${m.item_code===cur?' selected':''}>${m.item_code}</option>`).join('');
+    if (cur) sel.value = cur;
+  });
+}
+
+// ── Bulk upload file handlers ──────────────────────────────
+async function handleBulkFile(prefix, file) {
+  if (!file) return;
+  const endpoints = { pm: '/api/pipe-master/bulk', ps: '/api/pipe-stock/bulk', sp: '/api/spools/bulk' };
+  const url = endpoints[prefix];
+  if (!url) return;
+  const okEl  = document.getElementById(prefix + '-ok');
+  const errEl = document.getElementById(prefix + '-err');
+  if (okEl)  { okEl.textContent  = 'Uploading…'; okEl.className  = 'alert show a-ok'; }
+  if (errEl) { errEl.textContent = ''; errEl.className = 'alert a-err'; }
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    if (currentProject) fd.append('project_id', currentProject);
+    const r = await fetch(url, { method: 'POST', body: fd });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || 'Upload failed');
+    const added = d.added ?? d.spoolsAdded ?? 0;
+    const parts  = d.partsAdded ? ` (${d.partsAdded} parts)` : '';
+    const errs   = d.errors?.length ? ` — ${d.errors.length} row(s) skipped` : '';
+    if (okEl) { okEl.textContent = `Uploaded: ${added} record(s)${parts}${errs}`; okEl.className = 'alert show a-ok'; }
+    if (d.errors?.length && errEl) { errEl.textContent = d.errors.slice(0,5).join(' | '); errEl.className = 'alert show a-err'; }
+    // Refresh the relevant page data
+    if (prefix === 'pm') loadPipeMaster();
+    else if (prefix === 'ps') loadStock();
+    else if (prefix === 'sp') loadSpools();
+  } catch(e) {
+    if (okEl)  { okEl.textContent  = ''; okEl.className  = 'alert a-ok'; }
+    if (errEl) { errEl.textContent = e.message; errEl.className = 'alert show a-err'; }
+  }
+}
+
+function handleDrop(prefix, event) {
+  event.preventDefault();
+  event.currentTarget?.classList.remove('over');
+  const file = event.dataTransfer?.files?.[0];
+  if (file) handleBulkFile(prefix, file);
+}
+
+// ── Upload site XLS for remnants ───────────────────────────
+async function uploadSiteFile(file) {
+  if (!file) return;
+  const okEl  = document.getElementById('site-up-ok');
+  const errEl = document.getElementById('site-up-err');
+  if (okEl)  { okEl.textContent  = 'Uploading…'; okEl.className  = 'alert show a-ok'; }
+  if (errEl) { errEl.textContent = ''; errEl.className = 'alert a-err'; }
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    const r = await fetch('/api/remnants/site-upload', { method: 'POST', body: fd });
+    const d = await r.json().catch(()=>({}));
+    if (!r.ok) throw new Error(d.error || 'Upload failed');
+    if (okEl) { okEl.textContent = `Updated: ${d.rows_updated||0} rows  |  Failed: ${d.rows_failed||0}`; okEl.className = 'alert show a-ok'; }
+    loadRemnants();
+  } catch(e) {
+    if (okEl)  { okEl.textContent = ''; okEl.className = 'alert a-ok'; }
+    if (errEl) { errEl.textContent = e.message; errEl.className = 'alert show a-err'; }
+  }
+}
+
+// ── Remnant register loader ────────────────────────────────
+async function loadRemnants() {
+  const q = currentProject ? `?project_id=${currentProject}` : '';
+  const body  = document.getElementById('rem-body');
+  const empty = document.getElementById('rem-empty');
+  try {
+    const rems = await api('GET', `/api/remnants${q}`);
+    const badge = document.getElementById('sb-rem');
+    if (badge) badge.textContent = rems.filter(r=>r.status==='available').length;
+    if (!rems.length) { body.innerHTML=''; empty.style.display='block'; return; }
+    empty.style.display = 'none';
+    body.innerHTML = rems.map(r => {
+      const statusColor = r.status==='available'?'b-gn':r.status==='consumed'?'b-mt':'b-g';
+      return `<tr id="rem-row-${r.id}">
+        <td class="mono">${r.rem_no}</td>
+        <td class="mono">${r.item_code}</td>
+        <td style="font-size:11px;">${r.description||'—'}</td>
+        <td>${r.size_nominal||'—'}</td>
+        <td class="mono">${r.heat_number||'—'}</td>
+        <td class="mono">${r.source_pipe_tag||'—'}</td>
+        <td class="mono">${r.source_plan_no||'—'}</td>
+        <td class="mono">${r.theoretical_length_mm||'—'}</td>
+        <td class="mono" id="rem-actual-${r.id}">
+          <input type="number" value="${r.actual_length_mm||''}" placeholder="—"
+            style="width:80px;font-family:var(--mono);font-size:11px;background:transparent;border:1px solid var(--border);border-radius:3px;padding:2px 4px;color:var(--ink);"
+            onchange="saveRemActualInline(${r.id},this.value,'length')">
+        </td>
+        <td class="mono">${r.theoretical_qty||1}</td>
+        <td class="mono">
+          <input type="number" value="${r.actual_qty||''}" placeholder="—"
+            style="width:50px;font-family:var(--mono);font-size:11px;background:transparent;border:1px solid var(--border);border-radius:3px;padding:2px 4px;color:var(--ink);"
+            onchange="saveRemActualInline(${r.id},this.value,'qty')">
+        </td>
+        <td><span class="badge ${statusColor}">${r.status||'available'}</span></td>
+        <td style="font-size:11px;">${r.location||'—'}</td>
+        <td><button class="btn btn-s btn-sm" onclick="openRemEdit(${r.id},'${r.rem_no}',${r.actual_length_mm||'null'},${r.actual_qty||'null'},'${r.heat_number||''}','${(r.location||'').replace(/'/g,"\'")}','${r.status||'available'}')">Edit</button></td>
+      </tr>`;
+    }).join('');
+  } catch(e) { body.innerHTML=`<tr><td colspan="14" style="color:var(--rust);padding:16px;">${e.message}</td></tr>`; }
+}
+
+function openRemEdit(id, remNo, actLen, actQty, heat, loc, status) {
+  sv('rm-id', id);
+  sv('rm-len', actLen ?? '');
+  sv('rm-qty', actQty ?? '');
+  sv('rm-heat', heat);
+  sv('rm-loc', loc);
+  sv('rm-status', status);
+  const modal = document.getElementById('rem-modal');
+  if (modal) modal.style.display = 'flex';
+}
+
+async function saveRemnant() {
+  const id = v('rm-id');
+  if (!id) return;
+  try {
+    await api('PUT', `/api/remnants/${id}`, {
+      actual_length_mm: v('rm-len') || null,
+      actual_qty: v('rm-qty') || null,
+      heat_number: v('rm-heat') || null,
+      location: v('rm-loc') || null,
+      status: v('rm-status') || 'available'
+    });
+    closeModal('rem-modal');
+    flash('site-up-ok', 'Remnant updated.', 'ok');
+    loadRemnants();
+  } catch(e) { flash('site-up-err', e.message, 'err'); }
+}
+
+// ── Master Stock ───────────────────────────────────────────
+async function loadMasterStock() {
+  const q = currentProject ? `?project_id=${currentProject}` : '';
+  const body  = document.getElementById('ms-body');
+  const empty = document.getElementById('ms-empty');
+  try {
+    const rows = await api('GET', `/api/master-stock${q}`);
+    if (!rows.length) { body.innerHTML=''; empty.style.display='block'; return; }
+    empty.style.display = 'none';
+    const statusColor = s => s==='available'?'b-gn':s==='consumed'?'b-mt':'b-g';
+    body.innerHTML = rows.map(r=>`<tr>
+      <td class="mono">${r.pipe_tag}</td>
+      <td class="mono">${r.item_code}</td>
+      <td style="font-size:11px;">${r.description||'—'}</td>
+      <td>${r.size_nominal||'—'}</td>
+      <td><span class="badge">${r.material||'—'}</span></td>
+      <td class="mono">${r.heat_number||'—'}</td>
+      <td class="mono">${r.full_length_mm||'—'}</td>
+      <td class="mono">${r.current_length_mm||'—'}</td>
+      <td class="mono">${r.total_used_mm||0}</td>
+      <td><span class="badge ${statusColor(r.status)}">${r.status||'—'}</span></td>
+      <td style="font-size:10px;font-family:var(--mono);">${r.plan_nos||'—'}</td>
+      <td class="mono">${r.cut_count||0}</td>
+      <td class="mono">${r.latest_rem_no||'—'}</td>
+    </tr>`).join('');
+  } catch(e) { body.innerHTML=`<tr><td colspan="13" style="color:var(--rust);padding:16px;">${e.message}</td></tr>`; }
+}
+
+// ── Master Remnant Log ────────────────────────────────────
+async function loadMasterRemnant() {
+  const q = currentProject ? `?project_id=${currentProject}` : '';
+  const body  = document.getElementById('mr-body');
+  const empty = document.getElementById('mr-empty');
+  try {
+    const rows = await api('GET', `/api/master-remnant-log${q}`);
+    if (!rows.length) { body.innerHTML=''; empty.style.display='block'; return; }
+    empty.style.display = 'none';
+    const statusColor = s => s==='available'?'b-gn':s==='consumed'?'b-mt':'b-g';
+    body.innerHTML = rows.map(r=>`<tr>
+      <td class="mono">${r.rem_no}</td>
+      <td class="mono">${r.item_code}</td>
+      <td>${r.size_nominal||'—'}</td>
+      <td class="mono">${r.heat_number||'—'}</td>
+      <td class="mono">${r.generated_in_plan||'—'}</td>
+      <td class="mono">${r.source_pipe_tag||'—'}</td>
+      <td class="mono">${r.theoretical_length_mm||'—'}</td>
+      <td class="mono">${r.actual_length_mm||'—'}</td>
+      <td><span class="badge ${statusColor(r.status)}">${r.status||'—'}</span></td>
+      <td style="font-size:10px;font-family:var(--mono);">${r.used_in_plans||'—'}</td>
+      <td style="font-size:10px;font-family:var(--mono);">${r.allocated_spools||'—'}</td>
+    </tr>`).join('');
+  } catch(e) { body.innerHTML=`<tr><td colspan="11" style="color:var(--rust);padding:16px;">${e.message}</td></tr>`; }
+}
+
+// ── Cutting Allowance Chart ────────────────────────────────
+async function loadAllowanceChart() {
+  const body = document.getElementById('chart-body');
+  if (!body) return;
+  try {
+    const rows = await api('GET', '/api/cutting-allowance-chart');
+    if (!rows.length) { body.innerHTML='<tr><td colspan="7" style="text-align:center;padding:20px;">No data.</td></tr>'; return; }
+    body.innerHTML = rows.map(r=>`<tr>
+      <td>${r.size_nominal}</td>
+      <td><span class="badge">${r.material}</span></td>
+      <td class="mono">${r.od_mm||'—'}</td>
+      <td>${r.cutting_method||'—'}</td>
+      <td class="mono">${r.allowance_mm}</td>
+      <td class="mono">${r.bevel_allowance_mm||0}</td>
+      <td class="mono"><strong>${r.total_mm}</strong></td>
+    </tr>`).join('');
+  } catch(e) { body.innerHTML=`<tr><td colspan="7" style="color:var(--rust);padding:16px;">${e.message}</td></tr>`; }
+}
+
+// ── Projects page ──────────────────────────────────────────
+async function loadProjects_page() {
+  try {
+    const projs = await api('GET', '/api/projects');
+    const body  = document.getElementById('pj-body');
+    const empty = document.getElementById('pj-empty');
+    if (!projs.length) { body.innerHTML=''; empty.style.display='block'; return; }
+    empty.style.display = 'none';
+    body.innerHTML = projs.map(p=>`<tr>
+      <td class="mono">${p.code}</td>
+      <td>${p.name}</td>
+      <td>${p.location||'—'}</td>
+      <td>${p.client||'—'}</td>
+      <td class="mono" style="font-size:10px;">${p.code}-CS-CP-2025-0001</td>
+      <td class="mono" style="font-size:10px;">${p.code}-REM-000001</td>
+      <td><span class="badge ${p.active?'b-gn':'b-mt'}">${p.active?'Active':'Inactive'}</span></td>
+      <td><button class="btn btn-s btn-sm" onclick="openProjectEdit(${p.id},'${p.code}','${(p.name||'').replace(/'/g,"\'")}','${(p.location||'').replace(/'/g,"\'")}','${(p.client||'').replace(/'/g,"\'")}',${p.active})">Edit</button></td>
+    </tr>`).join('');
+  } catch(e) { flash('pj-err', e.message, 'err'); }
+}
+
+async function addProject() {
+  const code   = v('pj-code').toUpperCase();
+  const name   = v('pj-name');
+  const loc    = v('pj-loc');
+  const client = v('pj-client');
+  if (!code || !name) { flash('pj-err','Project code and name are required.','err'); return; }
+  try {
+    await api('POST', '/api/projects', { code, name, location: loc, client });
+    flash('pj-ok', `Project "${code}" created.`, 'ok');
+    clearProject();
+    loadProjects_page();
+    loadProjects(); // refresh top dropdown
+  } catch(e) { flash('pj-err', e.message, 'err'); }
+}
+
+function clearProject() {
+  ['pj-code','pj-name','pj-loc','pj-client'].forEach(id => sv(id,''));
+}
+
+function openProjectEdit(id, code, name, loc, client, active) {
+  sv('pje-id', id);
+  sv('pje-name', name);
+  sv('pje-loc', loc);
+  sv('pje-client', client);
+  const codeDisplay = document.getElementById('pje-code-display');
+  if (codeDisplay) codeDisplay.textContent = code;
+  const activeEl = document.getElementById('pje-active');
+  if (activeEl) activeEl.value = active ? '1' : '0';
+  const modal = document.getElementById('pj-edit-modal');
+  if (modal) modal.style.display = 'flex';
+}
+
+async function saveProjectEdit() {
+  const id   = v('pje-id');
+  const name = v('pje-name');
+  if (!id || !name) return;
+  try {
+    await api('PUT', `/api/projects/${id}`, {
+      name,
+      location: v('pje-loc'),
+      client: v('pje-client'),
+      active: document.getElementById('pje-active')?.value === '1' ? 1 : 0
+    });
+    closeModal('pj-edit-modal');
+    flash('pj-ok', 'Project updated.', 'ok');
+    loadProjects_page();
+    loadProjects();
+  } catch(e) { flash('pj-err', e.message, 'err'); }
+}
+
+// ── Users page ────────────────────────────────────────────
+async function loadUsers() {
+  try {
+    const users = await api('GET', '/api/users');
+    const body  = document.getElementById('u-body');
+    if (!body) return;
+    body.innerHTML = users.map(u=>`<tr>
+      <td class="mono">${u.username}</td>
+      <td>${u.full_name}</td>
+      <td><span class="badge">${u.role}</span></td>
+      <td>${u.company||'—'}</td>
+      <td>${u.location||'—'}</td>
+      <td style="font-size:11px;">${u.last_login ? u.last_login.slice(0,16).replace('T',' ') : 'Never'}</td>
+      <td><span class="badge ${u.active?'b-gn':'b-mt'}">${u.active?'Active':'Inactive'}</span></td>
+    </tr>`).join('');
+  } catch(e) { flash('u-err', e.message, 'err'); }
+}
+
+async function addUser() {
+  const username  = v('u-user').toLowerCase().replace(/\s+/g,'');
+  const full_name = v('u-name');
+  const password  = v('u-pass');
+  const role      = v('u-role');
+  const company   = v('u-co');
+  const location  = v('u-loc');
+  if (!username || !full_name || !password || !role) { flash('u-err','Username, full name, password and role are required.','err'); return; }
+  try {
+    await api('POST', '/api/users', { username, password, full_name, role, company, location });
+    flash('u-ok', `User "${username}" created.`, 'ok');
+    ['u-user','u-name','u-pass','u-co','u-loc'].forEach(id => sv(id,''));
+    loadUsers();
+  } catch(e) { flash('u-err', e.message, 'err'); }
+}
+
+// ── Demo page ─────────────────────────────────────────────
+function loadDemoPage() {
+  // Demo page is static — just ensure it's visible, no data load needed
+  const demoCuts = document.getElementById('demo-cuts-list');
+  if (demoCuts && !demoCuts.children.length) addDemoCut();
+}
+
+function addDemoCut() {
+  const list = document.getElementById('demo-cuts-list');
+  if (!list) return;
+  const idx = list.children.length + 1;
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:6px;';
+  row.innerHTML = `
+    <span style="font-family:var(--mono);font-size:11px;color:var(--muted);width:20px;">${idx}.</span>
+    <input type="number" placeholder="Length (mm)" min="1" style="flex:1;padding:6px 8px;font-family:var(--mono);font-size:12px;background:var(--bg2);border:1px solid var(--border);border-radius:4px;color:var(--ink);" value="${800 + idx * 200}">
+    <button onclick="this.parentElement.remove()" style="padding:4px 8px;background:var(--rust);color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">×</button>`;
+  list.appendChild(row);
+}
+
+async function runDemo() {
+  const pipeLen = parseFloat(document.getElementById('demo-pipelen')?.value) || 6000;
+  const pipeQty = parseInt(document.getElementById('demo-pipeqty')?.value) || 5;
+  const allowance = parseFloat(document.getElementById('demo-allowance')?.value) || 5;
+  const cutInputs = document.querySelectorAll('#demo-cuts-list input[type="number"]');
+  const cuts = Array.from(cutInputs).map(i => parseFloat(i.value)).filter(v => v > 0);
+  if (!cuts.length) { flash('demo-err','Add at least one cut length.','err'); return; }
+
+  // Simulate without remnants
+  let pipesWithout = 0, wasteWithout = 0;
+  { let remaining = []; for (let i=0;i<pipeQty;i++) remaining.push(pipeLen);
+    let usedPipes = new Set();
+    for (const cut of cuts) {
+      const needed = cut + allowance;
+      let allocated = false;
+      for (let i=0;i<remaining.length;i++) { if (remaining[i]>=needed){remaining[i]-=needed;usedPipes.add(i);allocated=true;break;} }
+      if (!allocated) { remaining.push(pipeLen - needed); usedPipes.add(remaining.length-1); pipesWithout++; }
+    }
+    pipesWithout = pipeQty; wasteWithout = remaining.reduce((a,b)=>a+b,0);
+  }
+
+  // Simulate with remnants (remnant-first BFD)
+  let pipesWith = 0, wasteWith = 0;
+  { let stock = Array.from({length:pipeQty},()=>pipeLen); let remnants = [];
+    for (const cut of [...cuts].sort((a,b)=>b-a)) {
+      const needed = cut + allowance;
+      // Try remnant first
+      remnants.sort((a,b)=>a-b);
+      const ri = remnants.findIndex(r=>r>=needed);
+      if (ri>=0) { const leftover=remnants[ri]-needed; remnants.splice(ri,1); if(leftover>50)remnants.push(leftover); continue; }
+      // Try stock
+      stock.sort((a,b)=>a-b);
+      const si = stock.findIndex(s=>s>=needed);
+      if (si>=0) { const leftover=stock[si]-needed; stock.splice(si,1); pipesWith++; if(leftover>50)remnants.push(leftover); }
+      else { pipesWith++; const leftover=pipeLen-needed; if(leftover>50)remnants.push(leftover); }
+    }
+    pipesWith = Math.min(pipesWith, pipeQty);
+    wasteWith = stock.reduce((a,b)=>a+b,0) + remnants.reduce((a,b)=>a+b,0);
+  }
+
+  const saving = Math.max(0, wasteWithout - wasteWith);
+  const savingPct = wasteWithout > 0 ? Math.round(saving/wasteWithout*100) : 0;
+
+  const headline = document.getElementById('demo-headline');
+  const resultEl = document.getElementById('demo-result');
+  if (headline) headline.textContent = `You save ${savingPct}% pipe waste by reusing remnants`;
+  if (resultEl) resultEl.style.display = 'block';
+
+  const wo = document.getElementById('demo-without');
+  const wi = document.getElementById('demo-with');
+  if (wo) wo.innerHTML = `<strong>Without remnants:</strong> ${pipesWithout} pipes used · ${Math.round(wasteWithout)}mm waste`;
+  if (wi) wi.innerHTML = `<strong>With remnants:</strong> ${pipesWith} pipes used · ${Math.round(wasteWith)}mm waste · <span style="color:var(--green);">saved ${Math.round(saving)}mm</span>`;
+}
+
+// ═══════════════════════════════════════════════════════════
+// END MISSING FUNCTIONS
+// ═══════════════════════════════════════════════════════════
+
 </script>
 
 <!-- Change Password Modal -->
